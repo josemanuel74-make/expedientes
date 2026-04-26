@@ -530,10 +530,19 @@ def document_is_available(doc_number: str, generated_numbers: set[str]) -> bool:
     return any(prev in generated_numbers for prev in previous)
 
 
-def user_can_manage_doc_number(doc_number: str | None) -> bool:
+def user_can_manage_doc_number(doc_number: str | None, case_row=None) -> bool:
     if not g.user or not doc_number:
         return False
-    return doc_number in ROLE_ALLOWED_DOCS.get(g.user["role"], set())
+
+    allowed_docs = set(ROLE_ALLOWED_DOCS.get(g.user["role"], set()))
+    if (
+        current_user_is_admin()
+        and case_row is not None
+        and normalize_email(case_row["instructor_email"] or "") == current_user_email()
+    ):
+        allowed_docs.update(ROLE_ALLOWED_DOCS["instructor"])
+
+    return doc_number in allowed_docs
 
 
 def instructor_phase_finished(status: str) -> bool:
@@ -644,13 +653,14 @@ def get_case_timeline(case_id: int) -> list[dict]:
     return items
 
 
-def template_options(case_id: int, templates: list[Path]) -> list[dict]:
+def template_options(case_row, templates: list[Path]) -> list[dict]:
+    case_id = case_row["id"]
     generated_numbers = generated_doc_numbers(case_id)
     options = []
     for template in templates:
         doc_number = infer_doc_number_from_template_name(template.name)
         flow_available = True if not doc_number else document_is_available(doc_number, generated_numbers)
-        role_allowed = user_can_manage_doc_number(doc_number)
+        role_allowed = user_can_manage_doc_number(doc_number, case_row)
         available = flow_available and role_allowed
         already_done = True if doc_number and doc_number in generated_numbers else False
         options.append(
@@ -666,13 +676,14 @@ def template_options(case_id: int, templates: list[Path]) -> list[dict]:
     return options
 
 
-def next_available_doc_numbers(case_id: int) -> set[str]:
+def next_available_doc_numbers(case_row) -> set[str]:
+    case_id = case_row["id"]
     generated_numbers = generated_doc_numbers(case_id)
     available = set()
     for doc_number in DOCUMENT_FLOW:
         if doc_number in generated_numbers:
             continue
-        if document_is_available(doc_number, generated_numbers) and user_can_manage_doc_number(doc_number):
+        if document_is_available(doc_number, generated_numbers) and user_can_manage_doc_number(doc_number, case_row):
             available.add(doc_number)
     return available
 
@@ -1259,8 +1270,8 @@ def case_detail(case_id: int):
     backfill_signature_requests_for_case(case)
     documents = get_case_documents(case_id)
     templates = template_candidates(Path(current_app.config["PROJECT_ROOT"]))
-    template_items = template_options(case_id, templates)
-    next_docs = next_available_doc_numbers(case_id)
+    template_items = template_options(case, templates)
+    next_docs = next_available_doc_numbers(case)
     return render_template(
         "cases/detail.html",
         case=case,
@@ -1286,13 +1297,6 @@ def case_document_form(case_id: int):
     if not template_name or not template_path.exists():
         flash("Selecciona una plantilla válida.", "error")
         return redirect(url_for("main.case_detail", case_id=case_id))
-    doc_number = infer_doc_number_from_template_name(template_name)
-    if doc_number and not user_can_manage_doc_number(doc_number):
-        flash("No tienes permiso para preparar ese documento.", "error")
-        return redirect(url_for("main.case_detail", case_id=case_id))
-    if doc_number and not document_is_available(doc_number, generated_doc_numbers(case_id)):
-        flash("Ese documento todavía no se puede generar porque falta un paso anterior.", "error")
-        return redirect(url_for("main.case_detail", case_id=case_id))
 
     db = get_db()
     case = db.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
@@ -1302,6 +1306,13 @@ def case_document_form(case_id: int):
     if not user_can_access_case(case):
         flash("No tienes permiso para preparar documentos de este expediente.", "error")
         return redirect(url_for("main.cases"))
+    doc_number = infer_doc_number_from_template_name(template_name)
+    if doc_number and not user_can_manage_doc_number(doc_number, case):
+        flash("No tienes permiso para preparar ese documento.", "error")
+        return redirect(url_for("main.case_detail", case_id=case_id))
+    if doc_number and not document_is_available(doc_number, generated_doc_numbers(case_id)):
+        flash("Ese documento todavía no se puede generar porque falta un paso anterior.", "error")
+        return redirect(url_for("main.case_detail", case_id=case_id))
     student = db.execute("SELECT * FROM students WHERE id = ?", (case["student_id"],)).fetchone()
     base_data = build_document_data(case, student)
     overrides = get_case_field_overrides(case_id)
@@ -1341,13 +1352,6 @@ def case_generate_document(case_id: int):
     if not template_path.exists():
         flash("La plantilla seleccionada no existe.", "error")
         return redirect(url_for("main.case_detail", case_id=case_id))
-    doc_number = infer_doc_number_from_template_name(template_name)
-    if doc_number and not user_can_manage_doc_number(doc_number):
-        flash("No tienes permiso para generar ese documento.", "error")
-        return redirect(url_for("main.case_detail", case_id=case_id))
-    if doc_number and not document_is_available(doc_number, generated_doc_numbers(case_id)):
-        flash("Ese documento todavía no se puede generar porque falta un paso anterior.", "error")
-        return redirect(url_for("main.case_detail", case_id=case_id))
 
     db = get_db()
     case = db.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
@@ -1357,6 +1361,13 @@ def case_generate_document(case_id: int):
     if not user_can_access_case(case):
         flash("No tienes permiso para generar documentos de este expediente.", "error")
         return redirect(url_for("main.cases"))
+    doc_number = infer_doc_number_from_template_name(template_name)
+    if doc_number and not user_can_manage_doc_number(doc_number, case):
+        flash("No tienes permiso para generar ese documento.", "error")
+        return redirect(url_for("main.case_detail", case_id=case_id))
+    if doc_number and not document_is_available(doc_number, generated_doc_numbers(case_id)):
+        flash("Ese documento todavía no se puede generar porque falta un paso anterior.", "error")
+        return redirect(url_for("main.case_detail", case_id=case_id))
     student = db.execute("SELECT * FROM students WHERE id = ?", (case["student_id"],)).fetchone()
     base_data = build_document_data(case, student)
     existing_values = merge_document_data(base_data, get_case_field_overrides(case_id))
