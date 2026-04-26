@@ -80,7 +80,8 @@ def create_app() -> Flask:
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-            "font-src 'self' data:; form-action 'self'; base-uri 'self'; frame-ancestors 'self'",
+            "script-src 'self' 'unsafe-inline'; font-src 'self' data:; form-action 'self'; "
+            "base-uri 'self'; frame-ancestors 'self'",
         )
         if request.is_secure or app.config["SESSION_COOKIE_SECURE"]:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
