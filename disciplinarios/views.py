@@ -763,7 +763,9 @@ def current_user_can_sign(document_row: dict) -> bool:
 def get_signature_request_for_document(document_id: int):
     return get_db().execute(
         """
-        SELECT signature_requests.*, generated_documents.case_id, generated_documents.template_name,
+        SELECT signature_requests.*,
+               signature_requests.status AS signature_status,
+               generated_documents.case_id, generated_documents.template_name,
                generated_documents.doc_number, generated_documents.version_number,
                generated_documents.is_latest, generated_documents.output_path
         FROM signature_requests
