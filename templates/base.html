@@ -52,5 +52,81 @@
         {% block content %}{% endblock %}
       </main>
     </div>
+    <div class="confirm-modal" id="confirm-modal" hidden>
+      <div class="confirm-modal__backdrop" data-confirm-close></div>
+      <div class="confirm-modal__panel" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+        <p class="confirm-modal__eyebrow">Confirmación</p>
+        <h2 id="confirm-modal-title">¿Confirmas esta acción?</h2>
+        <p class="confirm-modal__message" id="confirm-modal-message">Esta operación no se puede deshacer.</p>
+        <div class="confirm-modal__actions">
+          <button type="button" class="button button-secondary" id="confirm-modal-cancel">Cancelar</button>
+          <button type="button" class="button button-danger" id="confirm-modal-submit">Confirmar borrado</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      (() => {
+        const modal = document.getElementById("confirm-modal");
+        const title = document.getElementById("confirm-modal-title");
+        const message = document.getElementById("confirm-modal-message");
+        const cancelButton = document.getElementById("confirm-modal-cancel");
+        const confirmButton = document.getElementById("confirm-modal-submit");
+        if (!modal || !title || !message || !cancelButton || !confirmButton) {
+          return;
+        }
+
+        let activeForm = null;
+
+        const closeModal = () => {
+          modal.hidden = true;
+          document.body.classList.remove("modal-open");
+          activeForm = null;
+        };
+
+        const openModal = (form) => {
+          activeForm = form;
+          title.textContent = form.dataset.confirmTitle || "¿Confirmas esta acción?";
+          message.textContent = form.dataset.confirmMessage || "Esta operación no se puede deshacer.";
+          confirmButton.textContent = form.dataset.confirmSubmit || "Confirmar";
+          modal.hidden = false;
+          document.body.classList.add("modal-open");
+          confirmButton.focus();
+        };
+
+        document.addEventListener("submit", (event) => {
+          const form = event.target;
+          if (!(form instanceof HTMLFormElement) || !form.dataset.confirm) {
+            return;
+          }
+          if (form.dataset.confirmed === "true") {
+            delete form.dataset.confirmed;
+            return;
+          }
+          event.preventDefault();
+          openModal(form);
+        });
+
+        confirmButton.addEventListener("click", () => {
+          if (!activeForm) {
+            closeModal();
+            return;
+          }
+          activeForm.dataset.confirmed = "true";
+          activeForm.submit();
+        });
+
+        cancelButton.addEventListener("click", closeModal);
+        modal.addEventListener("click", (event) => {
+          if (event.target instanceof HTMLElement && event.target.hasAttribute("data-confirm-close")) {
+            closeModal();
+          }
+        });
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && !modal.hidden) {
+            closeModal();
+          }
+        });
+      })();
+    </script>
   </body>
 </html>

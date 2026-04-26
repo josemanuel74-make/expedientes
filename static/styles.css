@@ -24,6 +24,10 @@ body {
     linear-gradient(180deg, #f8f6f0 0%, var(--bg) 100%);
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
 a {
   color: var(--accent);
 }
@@ -964,6 +968,64 @@ textarea {
   margin: 0 auto;
 }
 
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.confirm-modal[hidden] {
+  display: none;
+}
+
+.confirm-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(13, 24, 22, 0.46);
+  backdrop-filter: blur(3px);
+}
+
+.confirm-modal__panel {
+  position: relative;
+  width: min(520px, 100%);
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid rgba(221, 215, 203, 0.9);
+  background: var(--panel);
+  box-shadow: 0 30px 70px rgba(23, 22, 19, 0.22);
+}
+
+.confirm-modal__eyebrow {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.confirm-modal__panel h2 {
+  margin: 0 0 12px;
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  line-height: 1.05;
+}
+
+.confirm-modal__message {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.confirm-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+
 .summary-list {
   display: grid;
   grid-template-columns: max-content 1fr;
@@ -1133,6 +1195,20 @@ textarea {
 
   .summary-list dt {
     margin-top: 10px;
+  }
+
+  .confirm-modal {
+    padding: 16px;
+  }
+
+  .confirm-modal__panel {
+    padding: 22px;
+    border-radius: 24px;
+  }
+
+  .confirm-modal__actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
 

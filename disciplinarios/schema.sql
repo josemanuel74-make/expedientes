@@ -27,6 +27,12 @@ CREATE TABLE IF NOT EXISTS login_tokens (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_login_tokens_email_created_at
+    ON login_tokens (email, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_login_tokens_ip_created_at
+    ON login_tokens (requested_by_ip, created_at);
+
 CREATE TABLE IF NOT EXISTS students (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,
@@ -104,6 +110,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity_action_created_at
+    ON audit_logs (entity_type, action, created_at);
 
 CREATE TABLE IF NOT EXISTS signature_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

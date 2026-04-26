@@ -140,6 +140,24 @@ def backfill_generated_document_versions(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_login_tokens_email_created_at
+        ON login_tokens (email, created_at)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_login_tokens_ip_created_at
+        ON login_tokens (requested_by_ip, created_at)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_entity_action_created_at
+        ON audit_logs (entity_type, action, created_at)
+        """
+    )
 
 
 def backfill_instructor_emails(db):

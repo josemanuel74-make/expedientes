@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from datetime import timedelta
 
 from flask import Flask, request
 
@@ -22,6 +23,12 @@ def load_local_env(env_path: Path) -> None:
 def create_app() -> Flask:
     project_root = Path(__file__).resolve().parent.parent
     load_local_env(project_root / ".env")
+    app_base_url = os.environ.get("APP_BASE_URL", "http://127.0.0.1:5000")
+    secret_key = os.environ.get("SECRET_KEY", "change-me-in-production")
+    is_https = app_base_url.startswith("https://")
+
+    if is_https and secret_key == "change-me-in-production":
+        raise RuntimeError("SECRET_KEY debe configurarse antes de usar la aplicación en HTTPS/producción.")
 
     app = Flask(
         __name__,
@@ -32,11 +39,11 @@ def create_app() -> Flask:
     )
 
     app.config.update(
-        SECRET_KEY=os.environ.get("SECRET_KEY", "change-me-in-production"),
+        SECRET_KEY=secret_key,
         DATABASE=str(project_root / "instance" / "disciplinarios.sqlite3"),
         PROJECT_ROOT=project_root,
         GENERATED_DOCS_DIR=str(project_root / "generated_docs"),
-        APP_BASE_URL=os.environ.get("APP_BASE_URL", "http://127.0.0.1:5000"),
+        APP_BASE_URL=app_base_url,
         MAIL_HOST=os.environ.get("MAIL_HOST", ""),
         MAIL_PORT=int(os.environ.get("MAIL_PORT", "587")),
         MAIL_USERNAME=os.environ.get("MAIL_USERNAME", ""),
@@ -50,9 +57,11 @@ def create_app() -> Flask:
         PORTAFIRMAS_UPLOADS_DIR=os.environ.get("PORTAFIRMAS_UPLOADS_DIR", ""),
         PORTAFIRMAS_BASE_URL=os.environ.get("PORTAFIRMAS_BASE_URL", ""),
         SOFFICE_BINARY=os.environ.get("SOFFICE_BINARY", "soffice"),
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=int(os.environ.get("SESSION_MAX_AGE_HOURS", "8"))),
+        SESSION_IDLE_MINUTES=int(os.environ.get("SESSION_IDLE_MINUTES", "60")),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=os.environ.get("APP_BASE_URL", "http://127.0.0.1:5000").startswith("https://"),
+        SESSION_COOKIE_SECURE=is_https,
     )
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
@@ -67,13 +76,17 @@ def create_app() -> Flask:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
             "font-src 'self' data:; form-action 'self'; base-uri 'self'; frame-ancestors 'self'",
         )
+        if request.is_secure or app.config["SESSION_COOKIE_SECURE"]:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if request.endpoint != "static":
-            response.headers.setdefault("Cache-Control", "no-store")
+            response.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            response.headers.setdefault("Pragma", "no-cache")
         return response
 
     return app

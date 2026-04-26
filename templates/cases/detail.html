@@ -11,7 +11,14 @@
     <a class="button button-secondary" href="{{ url_for('main.export_case_zip', case_id=case.id) }}">Exportar ZIP</a>
     {% if g.user["role"] == "admin" %}
     <a class="button" href="{{ url_for('main.case_edit', case_id=case.id) }}">Editar expediente</a>
-    <form method="post" action="{{ url_for('main.case_delete', case_id=case.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este expediente?');">
+    <form
+      method="post"
+      action="{{ url_for('main.case_delete', case_id=case.id) }}"
+      data-confirm="true"
+      data-confirm-title="¿Borrar expediente?"
+      data-confirm-message="Se eliminará el expediente {{ case.case_number }} y también sus documentos generados. Esta acción no se puede deshacer."
+      data-confirm-submit="Borrar expediente"
+    >
       <button class="button button-danger" type="submit">Borrar expediente</button>
     </form>
     {% endif %}
@@ -136,7 +143,14 @@
               </form>
               {% endif %}
               {% if g.user["role"] == "admin" %}
-              <form method="post" action="{{ url_for('main.delete_document', document_id=document.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este documento generado?');">
+              <form
+                method="post"
+                action="{{ url_for('main.delete_document', document_id=document.id) }}"
+                data-confirm="true"
+                data-confirm-title="¿Borrar documento generado?"
+                data-confirm-message="Se eliminará {{ document.template_name }} v{{ \"%02d\"|format(document.version_number or 1) }}. Esta acción no se puede deshacer."
+                data-confirm-submit="Borrar documento"
+              >
                 <button class="link-button link-danger" type="submit">Borrar</button>
               </form>
               {% endif %}

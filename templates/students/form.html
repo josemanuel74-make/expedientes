@@ -5,7 +5,14 @@
     <h2>{% if student %}Editar alumno{% else %}Nuevo alumno{% endif %}</h2>
   </div>
   {% if student %}
-  <form method="post" action="{{ url_for('main.student_delete', student_id=student.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este alumno?');">
+  <form
+    method="post"
+    action="{{ url_for('main.student_delete', student_id=student.id) }}"
+    data-confirm="true"
+    data-confirm-title="¿Borrar alumno?"
+    data-confirm-message="Se eliminará la ficha de {{ student.full_name }}. Si tiene expedientes asociados, la aplicación seguirá bloqueando el borrado."
+    data-confirm-submit="Borrar alumno"
+  >
     <button class="button button-danger" type="submit">Borrar alumno</button>
   </form>
   {% endif %}

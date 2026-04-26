@@ -38,7 +38,14 @@
             <div class="row-actions">
               {% if g.user["role"] == "admin" %}
               <a href="{{ url_for('main.case_edit', case_id=case.id) }}">Editar</a>
-              <form method="post" action="{{ url_for('main.case_delete', case_id=case.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este expediente?');">
+              <form
+                method="post"
+                action="{{ url_for('main.case_delete', case_id=case.id) }}"
+                data-confirm="true"
+                data-confirm-title="¿Borrar expediente?"
+                data-confirm-message="Se eliminará el expediente {{ case.case_number }} y también sus documentos generados. Esta acción no se puede deshacer."
+                data-confirm-submit="Borrar expediente"
+              >
                 <button class="link-button link-danger" type="submit">Borrar</button>
               </form>
               {% else %}
