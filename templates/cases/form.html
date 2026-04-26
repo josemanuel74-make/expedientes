@@ -127,10 +127,51 @@
       const select = document.getElementById(selectId);
       if (!searchInput || !select) return;
 
-      const options = Array.from(select.options).slice(1);
+      const placeholderOption = select.options[0] ? select.options[0].cloneNode(true) : null;
+      const options = Array.from(select.options)
+        .slice(1)
+        .map((option) => ({
+          value: option.value,
+          label: option.textContent.trim(),
+          search: normalizeSearchValue(option.dataset.search || option.textContent || ""),
+          selected: option.selected,
+        }));
       const selectedIndicator = document.createElement("p");
       selectedIndicator.className = "picker-selection";
       select.insertAdjacentElement("afterend", selectedIndicator);
+
+      function renderOptions(filteredOptions) {
+        const currentValue = select.value || options.find((option) => option.selected)?.value || "";
+        select.innerHTML = "";
+
+        if (placeholderOption) {
+          const placeholder = placeholderOption.cloneNode(true);
+          placeholder.selected = !filteredOptions.some((option) => option.value === currentValue);
+          select.appendChild(placeholder);
+        }
+
+        if (!filteredOptions.length) {
+          const emptyOption = document.createElement("option");
+          emptyOption.value = "";
+          emptyOption.textContent = "No hay resultados";
+          emptyOption.disabled = true;
+          emptyOption.selected = true;
+          select.appendChild(emptyOption);
+          select.size = 2;
+          return;
+        }
+
+        filteredOptions.forEach((item, index) => {
+          const option = document.createElement("option");
+          option.value = item.value;
+          option.textContent = item.label;
+          option.dataset.search = item.search;
+          option.selected = item.value === currentValue || (!currentValue && index === 0);
+          select.appendChild(option);
+        });
+
+        select.size = Math.min(Math.max(filteredOptions.length, minSize), maxSize);
+      }
 
       function updateSelectedIndicator() {
         const option = select.selectedOptions[0];
@@ -143,28 +184,8 @@
 
       function filterOptions() {
         const query = normalizeSearchValue(searchInput.value);
-        let visibleCount = 0;
-
-        options.forEach((option) => {
-          const haystack = normalizeSearchValue(option.dataset.search || "");
-          const match = !query || haystack.includes(query);
-          option.hidden = !match;
-          if (match) visibleCount += 1;
-        });
-
-        const selectedOption = select.selectedOptions[0];
-        if (selectedOption && selectedOption.hidden) {
-          select.value = "";
-        }
-
-        if (!select.value) {
-          const firstVisible = options.find((option) => !option.hidden);
-          if (firstVisible) {
-            firstVisible.selected = true;
-          }
-        }
-
-        select.size = Math.min(Math.max(visibleCount || 1, minSize), maxSize);
+        const filteredOptions = options.filter((option) => !query || option.search.includes(query));
+        renderOptions(filteredOptions);
         updateSelectedIndicator();
       }
 
