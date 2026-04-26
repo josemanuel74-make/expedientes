@@ -48,11 +48,33 @@
     const prepareUrl = {{ url_for('main.prepare_signature', document_id=document.generated_document_id)|tojson }};
     const saveUrl = {{ url_for('main.save_signature', document_id=document.generated_document_id)|tojson }};
     const redirectUrl = {{ url_for('main.case_detail', case_id=case.id)|tojson }};
+    const storageUrl = `${window.location.origin}/storage`;
+    const retrieverUrl = `${window.location.origin}/retriever`;
+    let autoFirmaReady = false;
 
     const setFeedback = (message, isError = false) => {
       feedback.textContent = message;
       feedback.classList.toggle("text-danger", isError);
     };
+
+    const ensureAutoFirma = () => {
+      if (typeof AutoScript === "undefined" || AutoScript === null) {
+        throw new Error("AutoFirma no está disponible en esta página.");
+      }
+      if (!autoFirmaReady) {
+        AutoScript.cargarAppAfirma();
+        AutoScript.setServlets(storageUrl, retrieverUrl);
+        autoFirmaReady = true;
+      }
+    };
+
+    document.addEventListener("DOMContentLoaded", () => {
+      try {
+        ensureAutoFirma();
+      } catch (error) {
+        setFeedback(error.message || "No se ha podido inicializar AutoFirma.", true);
+      }
+    });
 
     signButton.addEventListener("click", async () => {
       signButton.disabled = true;
@@ -63,9 +85,7 @@
         if (!prepareResponse.ok) {
           throw new Error(prepareData.error || "No se ha podido preparar el documento para firma.");
         }
-        if (typeof AutoScript === "undefined") {
-          throw new Error("AutoFirma no está disponible en este equipo.");
-        }
+        ensureAutoFirma();
 
         AutoScript.sign(
           prepareData.pdf_base64,
