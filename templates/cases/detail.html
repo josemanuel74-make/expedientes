@@ -77,7 +77,7 @@
       {% for template in template_items %}
       <option value="{{ template.name }}" {% if not template.available %}disabled{% endif %}>
         {{ template.name }}
-        {% if template.already_done %} · ya generado{% elif not template.available %} · bloqueado{% endif %}
+        {% if template.already_done %} · ya generado{% elif not template.role_allowed %} · no permitido{% elif not template.flow_available %} · bloqueado{% endif %}
       </option>
       {% endfor %}
     </select>

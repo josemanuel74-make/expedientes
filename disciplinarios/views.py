@@ -213,6 +213,11 @@ DOCUMENT_FLOW = {
     "12": {"prev": ["10"]},
 }
 
+ROLE_ALLOWED_DOCS = {
+    "admin": {"01", "10", "11", "12"},
+    "instructor": {"02", "03", "04", "05", "06", "07", "08", "09"},
+}
+
 
 def full_guardians_name(row_values: list[str]) -> str:
     first = " ".join(
@@ -438,6 +443,12 @@ def document_is_available(doc_number: str, generated_numbers: set[str]) -> bool:
     return any(prev in generated_numbers for prev in previous)
 
 
+def user_can_manage_doc_number(doc_number: str | None) -> bool:
+    if not g.user or not doc_number:
+        return False
+    return doc_number in ROLE_ALLOWED_DOCS.get(g.user["role"], set())
+
+
 def instructor_phase_finished(status: str) -> bool:
     return status not in ACTIVE_INSTRUCTOR_STATUSES
 
@@ -447,13 +458,17 @@ def template_options(case_id: int, templates: list[Path]) -> list[dict]:
     options = []
     for template in templates:
         doc_number = infer_doc_number_from_template_name(template.name)
-        available = True if not doc_number else document_is_available(doc_number, generated_numbers)
+        flow_available = True if not doc_number else document_is_available(doc_number, generated_numbers)
+        role_allowed = user_can_manage_doc_number(doc_number)
+        available = flow_available and role_allowed
         already_done = True if doc_number and doc_number in generated_numbers else False
         options.append(
             {
                 "name": template.name,
                 "doc_number": doc_number,
                 "available": available,
+                "role_allowed": role_allowed,
+                "flow_available": flow_available,
                 "already_done": already_done,
             }
         )
@@ -466,7 +481,7 @@ def next_available_doc_numbers(case_id: int) -> set[str]:
     for doc_number in DOCUMENT_FLOW:
         if doc_number in generated_numbers:
             continue
-        if document_is_available(doc_number, generated_numbers):
+        if document_is_available(doc_number, generated_numbers) and user_can_manage_doc_number(doc_number):
             available.add(doc_number)
     return available
 
@@ -944,6 +959,9 @@ def case_document_form(case_id: int):
         flash("Selecciona una plantilla válida.", "error")
         return redirect(url_for("main.case_detail", case_id=case_id))
     doc_number = infer_doc_number_from_template_name(template_name)
+    if doc_number and not user_can_manage_doc_number(doc_number):
+        flash("No tienes permiso para preparar ese documento.", "error")
+        return redirect(url_for("main.case_detail", case_id=case_id))
     if doc_number and not document_is_available(doc_number, generated_doc_numbers(case_id)):
         flash("Ese documento todavía no se puede generar porque falta un paso anterior.", "error")
         return redirect(url_for("main.case_detail", case_id=case_id))
@@ -996,6 +1014,9 @@ def case_generate_document(case_id: int):
         flash("La plantilla seleccionada no existe.", "error")
         return redirect(url_for("main.case_detail", case_id=case_id))
     doc_number = infer_doc_number_from_template_name(template_name)
+    if doc_number and not user_can_manage_doc_number(doc_number):
+        flash("No tienes permiso para generar ese documento.", "error")
+        return redirect(url_for("main.case_detail", case_id=case_id))
     if doc_number and not document_is_available(doc_number, generated_doc_numbers(case_id)):
         flash("Ese documento todavía no se puede generar porque falta un paso anterior.", "error")
         return redirect(url_for("main.case_detail", case_id=case_id))
