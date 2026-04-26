@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h2>{% if case %}Editar expediente{% else %}Nuevo expediente{% endif %}</h2>
+  </div>
+</header>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    <input type="hidden" name="status" value="{{ case.status if case else 'iniciado' }}">
+    <label>
+      Número de expediente
+      <input type="text" name="case_number" required value="{{ case.case_number if case else '' }}">
+    </label>
+    <div class="student-picker full-width">
+      <label class="full-width">
+        Buscar alumno
+        <input
+          type="search"
+          id="student-search"
+          placeholder="Escribe nombre, curso o grupo"
+          autocomplete="off"
+        >
+      </label>
+      <label class="full-width">
+        Alumno
+        <select name="student_id" id="student-select" required size="10">
+          <option value="">Selecciona un alumno</option>
+          {% for student in students %}
+          <option
+            value="{{ student.id }}"
+            data-search="{{ (student.full_name ~ ' ' ~ student.course_name ~ ' ' ~ student.group_name)|lower }}"
+            {% if case and case.student_id == student.id %}selected{% endif %}
+          >
+            {{ student.full_name }} · {{ student.course_name }} · {{ student.group_name }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="muted student-picker-help">
+        Filtra por nombre, curso o grupo. Usa el teclado para moverte por los resultados.
+      </p>
+    </div>
+    <div class="inline-note">
+      <strong>Estado actual:</strong>
+      <span>{% if case %}{{ dict(statuses).get(case.status, case.status) }}{% else %}01. Inicio de expediente{% endif %}</span>
+    </div>
+    <label>
+      Fecha conocimiento de hechos
+      <input type="date" name="fact_known_date" required value="{{ case.fact_known_date if case else '' }}">
+    </label>
+    <label>
+      Fecha inicio expediente
+      <input type="date" name="opening_date" value="{{ case.opening_date if case else '' }}">
+    </label>
+    <label>
+      Fecha de hechos
+      <input type="date" name="facts_date" value="{{ case.facts_date if case else '' }}">
+    </label>
+    <div class="picker-panel">
+      <label class="full-width">
+        Buscar instructor
+        <input
+          type="search"
+          id="instructor-search"
+          placeholder="Escribe nombre, puesto o correo"
+          autocomplete="off"
+        >
+      </label>
+      <label class="full-width">
+        Instructor
+        <select name="instructor_name" id="instructor-select" size="8">
+          <option value="">Selecciona un instructor</option>
+          {% set current_instructor = case.instructor_name if case else '' %}
+          {% set ns = namespace(found=false) %}
+          {% for instructor in instructors %}
+          <option
+            value="{{ instructor.name }}"
+            data-search="{{ instructor.search }}"
+            title="{% if instructor.role %}{{ instructor.role }}{% endif %}{% if instructor.email %}{% if instructor.role %} · {% endif %}{{ instructor.email }}{% endif %}"
+            {% if current_instructor == instructor.name or current_instructor == instructor.raw_name %}selected{% set ns.found = true %}{% endif %}
+          >
+            {{ instructor.name }}
+          </option>
+          {% endfor %}
+          {% if current_instructor and not ns.found %}
+          <option value="{{ current_instructor }}" selected>
+            {{ current_instructor }}
+          </option>
+          {% endif %}
+        </select>
+      </label>
+      <p class="muted student-picker-help">
+        Filtra por nombre, apellidos, puesto o correo. La búsqueda ignora tildes y signos.
+      </p>
+    </div>
+    <label class="full-width">
+      Hechos
+      <textarea name="facts_summary" rows="5" required>{{ case.facts_summary if case else '' }}</textarea>
+    </label>
+    <label class="full-width">
+      Notas internas
+      <textarea name="notes" rows="4">{{ case.notes if case else '' }}</textarea>
+    </label>
+    <div class="full-width actions">
+      <button class="button" type="submit">Guardar</button>
+      <a class="button button-secondary" href="{{ url_for('main.cases') }}">Cancelar</a>
+    </div>
+  </form>
+</section>
+
+  <script>
+  (function () {
+    function normalizeSearchValue(value) {
+      return (value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function setupFilterableSelect(searchId, selectId, minSize, maxSize) {
+      const searchInput = document.getElementById(searchId);
+      const select = document.getElementById(selectId);
+      if (!searchInput || !select) return;
+
+      const options = Array.from(select.options).slice(1);
+      const selectedIndicator = document.createElement("p");
+      selectedIndicator.className = "picker-selection";
+      select.insertAdjacentElement("afterend", selectedIndicator);
+
+      function updateSelectedIndicator() {
+        const option = select.selectedOptions[0];
+        if (!option || !option.value) {
+          selectedIndicator.textContent = "Sin selección";
+          return;
+        }
+        selectedIndicator.textContent = `Seleccionado: ${option.textContent.trim()}`;
+      }
+
+      function filterOptions() {
+        const query = normalizeSearchValue(searchInput.value);
+        let visibleCount = 0;
+
+        options.forEach((option) => {
+          const haystack = normalizeSearchValue(option.dataset.search || "");
+          const match = !query || haystack.includes(query);
+          option.hidden = !match;
+          if (match) visibleCount += 1;
+        });
+
+        const selectedOption = select.selectedOptions[0];
+        if (selectedOption && selectedOption.hidden) {
+          select.value = "";
+        }
+
+        if (!select.value) {
+          const firstVisible = options.find((option) => !option.hidden);
+          if (firstVisible) {
+            firstVisible.selected = true;
+          }
+        }
+
+        select.size = Math.min(Math.max(visibleCount || 1, minSize), maxSize);
+        updateSelectedIndicator();
+      }
+
+      searchInput.addEventListener("input", filterOptions);
+      select.addEventListener("change", updateSelectedIndicator);
+      filterOptions();
+    }
+
+    setupFilterableSelect("student-search", "student-select", 6, 12);
+    setupFilterableSelect("instructor-search", "instructor-select", 5, 10);
+  })();
+</script>
+{% endblock %}

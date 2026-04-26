@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Acceso{% endblock %}
+{% block content %}
+<section class="access-page">
+  <article class="access-card">
+    <header class="access-header">
+      <p class="access-kicker">IES Leopoldo Queipo</p>
+      <h1>Acceso a expedientes disciplinarios</h1>
+      <p class="access-intro">
+        El acceso se hace por correo autorizado y código temporal. Primero solicita el código y después introdúcelo para entrar.
+      </p>
+    </header>
+
+    <section class="access-block">
+      <h2>1. Solicitar código</h2>
+      <form method="post" class="access-form">
+        <input type="hidden" name="action" value="request">
+        <label>
+          Correo electrónico
+          <input type="email" name="email" autocomplete="email" required value="{{ email or '' }}">
+        </label>
+        <button class="button" type="submit">Enviar código de acceso</button>
+      </form>
+    </section>
+
+    <section class="access-block">
+      <h2>2. Entrar con código</h2>
+      <form method="post" class="access-form">
+        <input type="hidden" name="action" value="verify">
+        <label>
+          Correo electrónico
+          <input type="email" name="email" autocomplete="email" required value="{{ email or '' }}">
+        </label>
+        <label>
+          Código
+          <input type="text" name="token" inputmode="numeric" autocomplete="one-time-code" required placeholder="Introduce el código recibido">
+        </label>
+        <button class="button button-secondary" type="submit">Entrar con código</button>
+      </form>
+    </section>
+
+    <footer class="access-footer">
+      <p>Acceso solo para correos autorizados.</p>
+    </footer>
+  </article>
+</section>
+{% endblock %}

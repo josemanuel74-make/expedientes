@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div class="header-copy">
+    <p class="eyebrow app-eyebrow">Expediente</p>
+    <h2>{{ case.case_number }}</h2>
+    <p class="muted">{{ case.full_name }} · {{ case.course_name }} · {{ case.group_name }}</p>
+  </div>
+  <div class="header-actions">
+    <span class="status-pill">{{ status_labels.get(case.status, case.status) }}</span>
+    {% if g.user["role"] == "admin" %}
+    <a class="button" href="{{ url_for('main.case_edit', case_id=case.id) }}">Editar expediente</a>
+    <form method="post" action="{{ url_for('main.case_delete', case_id=case.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este expediente?');">
+      <button class="button button-danger" type="submit">Borrar expediente</button>
+    </form>
+    {% endif %}
+  </div>
+</header>
+
+<section class="detail-grid">
+  <article class="panel panel-emphasis">
+    <h3>Resumen</h3>
+    <dl class="summary-list">
+      <dt>Conocimiento hechos</dt><dd>{{ case.fact_known_date }}</dd>
+      <dt>Inicio expediente</dt><dd>{{ case.opening_date or 'Pendiente' }}</dd>
+      <dt>Instructor</dt><dd>{{ case.instructor_name or 'Pendiente' }}</dd>
+      <dt>Representantes</dt><dd>{{ case.guardians_name }}</dd>
+      <dt>Medida provisional</dt><dd>{{ case.precautionary_days }} día(s)</dd>
+      <dt>Suspensión</dt><dd>{{ case.suspension_days }} día(s)</dd>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <h3>Control básico de plazos</h3>
+    <p class="muted">En esta versión inicial los plazos se consignan y revisan manualmente; la automatización de alertas será el siguiente paso.</p>
+    <ul class="plain-list">
+      <li>10 días desde el conocimiento de los hechos para acordar la instrucción.</li>
+      <li>7 días máximos de instrucción.</li>
+      <li>1 mes máximo para resolver desde la iniciación.</li>
+    </ul>
+  </article>
+</section>
+
+<section class="detail-grid">
+  <article class="panel">
+    <h3>Hechos</h3>
+    <p class="pre-wrap">{{ case.facts_summary }}</p>
+  </article>
+  <article class="panel">
+    <h3>Tipificación</h3>
+    <p class="pre-wrap">{{ case.conduct_type or 'Sin completar' }}</p>
+    <h3>Propuesta</h3>
+    <p class="pre-wrap">{{ case.proposed_measure or 'Sin completar' }}</p>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <h3>Generar documento</h3>
+    <span class="muted">Elige la plantilla y completa solo los campos necesarios</span>
+  </div>
+  <div class="flow-hint">
+    <strong>Siguientes documentos disponibles:</strong>
+    {% if next_docs %}
+      <div class="flow-list">
+        {% for item in template_items if item.doc_number in next_docs %}
+        <span class="mini-pill">{{ item.doc_number }} · {{ item.name }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <span>El expediente ya ha llegado al final del flujo.</span>
+    {% endif %}
+  </div>
+  <form method="get" action="{{ url_for('main.case_document_form', case_id=case.id) }}" class="toolbar">
+    <select name="template_name" required>
+      <option value="">Selecciona una plantilla</option>
+      {% for template in template_items %}
+      <option value="{{ template.name }}" {% if not template.available %}disabled{% endif %}>
+        {{ template.name }}
+        {% if template.already_done %} · ya generado{% elif not template.available %} · bloqueado{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <button class="button" type="submit">Continuar</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h3>Documentos generados</h3>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Plantilla</th>
+          <th>Fecha</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for document in documents %}
+        <tr>
+          <td data-label="Plantilla">{{ document.template_name }}</td>
+          <td data-label="Fecha">{{ document.created_at }}</td>
+          <td data-label="Acciones">
+            <div class="row-actions">
+              <a href="{{ url_for('main.download_document', document_id=document.id) }}">Descargar</a>
+              {% if g.user["role"] == "admin" %}
+              <form method="post" action="{{ url_for('main.delete_document', document_id=document.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este documento generado?');">
+                <button class="link-button link-danger" type="submit">Borrar</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3">Todavía no hay documentos generados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

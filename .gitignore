@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+instance/
+generated_docs/
+.env
+.DS_Store
+*.sqlite3
+RegAlum (1).xls
+todosProfesores.xlsx

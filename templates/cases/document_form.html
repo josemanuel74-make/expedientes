@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h2>Preparar documento</h2>
+    <p class="muted">{{ template_name }} · {{ case.case_number }} · {{ case.full_name }}</p>
+  </div>
+  <a class="button button-secondary" href="{{ url_for('main.case_detail', case_id=case.id) }}">Volver al expediente</a>
+</header>
+
+<section class="panel">
+  <p class="muted">
+    Esta pantalla solo pide los campos que necesita la plantilla seleccionada. Lo que introduzcas se
+    guardará para reutilizarlo en los siguientes documentos del mismo expediente.
+  </p>
+  {% if case.instructor_name %}
+  <div class="inline-note">
+    <strong>Instructor ya asignado:</strong>
+    <span>{{ case.instructor_name }}</span>
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('main.case_generate_document', case_id=case.id) }}" class="form-grid">
+    <input type="hidden" name="template_name" value="{{ template_name }}">
+    {% for item in date_helper_items %}
+      <label>
+        {{ item.label }} <span class="required-mark">*</span>
+        <input type="date" name="{{ item.name }}" value="{{ item.value }}" required>
+        <small class="field-help field-help-placeholder">&nbsp;</small>
+      </label>
+    {% endfor %}
+    {% for field in field_items %}
+      {% set is_long = field.name in ['hechos', 'hechosImputados', 'calificacionHechos', 'propuesta'] %}
+      <label class="{% if is_long %}full-width{% endif %}">
+        {{ field.label }}{% if field.required %} <span class="required-mark">*</span>{% endif %}
+        {% if field.name == 'nombreInstructor' %}
+        <div class="picker-panel picker-panel-compact">
+          <label class="full-width">
+            Buscar instructor
+            <input
+              type="search"
+              id="document-instructor-search"
+              placeholder="Escribe nombre, puesto o correo"
+              autocomplete="off"
+            >
+          </label>
+          <label class="full-width">
+            Instructor
+            <select name="{{ field.name }}" id="document-instructor-select" size="8" required>
+              <option value="">Selecciona un instructor</option>
+              {% set ns = namespace(found=false) %}
+              {% for instructor in instructors %}
+              <option
+                value="{{ instructor.name }}"
+                data-search="{{ instructor.search }}"
+                title="{% if instructor.role %}{{ instructor.role }}{% endif %}{% if instructor.email %}{% if instructor.role %} · {% endif %}{{ instructor.email }}{% endif %}"
+                {% if field.value == instructor.name or field.value == instructor.raw_name %}selected{% set ns.found = true %}{% endif %}
+              >
+                {{ instructor.name }}
+              </option>
+              {% endfor %}
+              {% if field.value and not ns.found %}
+              <option value="{{ field.value }}" selected>
+                {{ field.value }}
+              </option>
+              {% endif %}
+            </select>
+          </label>
+          <p class="muted student-picker-help">
+            Filtra por nombre, apellidos, puesto o correo. La búsqueda ignora tildes y signos.
+          </p>
+        </div>
+        {% elif is_long %}
+        <textarea name="{{ field.name }}" rows="5" required>{{ field.value }}</textarea>
+        {% else %}
+        <input
+          type="{% if field.name in ['diasSuspension', 'diasExpulsionCautelar'] %}number{% else %}text{% endif %}"
+          name="{{ field.name }}"
+          value="{{ field.value }}"
+          {% if field.name == 'diasSuspension' %}min="1" step="1"{% elif field.name == 'diasExpulsionCautelar' %}min="1" max="5" step="1"{% endif %}
+          {% if field.required %}required{% endif %}
+          {% if field.name in ['mesHechos', 'mesApertura', 'mesVisita', 'mesConsejoEscolar'] %}placeholder="Ejemplo: abril"{% elif field.name == 'fechaHoraCita' %}placeholder="Ejemplo: 27/04/2026 a las 13:30"{% endif %}
+        >
+        {% endif %}
+        <small class="field-help{% if not field.help_text %} field-help-placeholder{% endif %}">{{ field.help_text or '&nbsp;'|safe }}</small>
+      </label>
+    {% endfor %}
+    <div class="full-width actions">
+      <button class="button" type="submit">Guardar datos y generar DOCX</button>
+      <a class="button button-secondary" href="{{ url_for('main.case_detail', case_id=case.id) }}">Cancelar</a>
+    </div>
+  </form>
+</section>
+<script>
+  (function () {
+    function normalizeSearchValue(value) {
+      return (value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function setupFilterableSelect(searchId, selectId, minSize, maxSize) {
+      const searchInput = document.getElementById(searchId);
+      const select = document.getElementById(selectId);
+      if (!searchInput || !select) return;
+
+      const options = Array.from(select.options).slice(1);
+      const selectedIndicator = document.createElement("p");
+      selectedIndicator.className = "picker-selection";
+      select.insertAdjacentElement("afterend", selectedIndicator);
+
+      function updateSelectedIndicator() {
+        const option = select.selectedOptions[0];
+        if (!option || !option.value) {
+          selectedIndicator.textContent = "Sin selección";
+          return;
+        }
+        selectedIndicator.textContent = `Seleccionado: ${option.textContent.trim()}`;
+      }
+
+      function filterOptions() {
+        const query = normalizeSearchValue(searchInput.value);
+        let visibleCount = 0;
+
+        options.forEach((option) => {
+          const haystack = normalizeSearchValue(option.dataset.search || "");
+          const match = !query || haystack.includes(query);
+          option.hidden = !match;
+          if (match) visibleCount += 1;
+        });
+
+        const selectedOption = select.selectedOptions[0];
+        if (selectedOption && selectedOption.hidden) {
+          select.value = "";
+        }
+
+        if (!select.value) {
+          const firstVisible = options.find((option) => !option.hidden);
+          if (firstVisible) {
+            firstVisible.selected = true;
+          }
+        }
+
+        select.size = Math.min(Math.max(visibleCount || 1, minSize), maxSize);
+        updateSelectedIndicator();
+      }
+
+      searchInput.addEventListener("input", filterOptions);
+      select.addEventListener("change", updateSelectedIndicator);
+      filterOptions();
+    }
+
+    setupFilterableSelect("document-instructor-search", "document-instructor-select", 5, 10);
+  })();
+</script>
+{% endblock %}

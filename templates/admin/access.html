@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h2>Administradores</h2>
+    <p class="muted">Correos con acceso total a la aplicación.</p>
+  </div>
+</header>
+
+<section class="panel">
+  <form method="post" action="{{ url_for('main.admin_access_add') }}" class="form-grid compact">
+    <label>
+      Correo del administrador
+      <input type="email" name="email" required placeholder="nombre@edumelilla.es">
+    </label>
+    <div class="actions">
+      <button class="button" type="submit">Añadir administrador</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Correo</th>
+          <th>Nombre</th>
+          <th>Alta</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in admin_emails %}
+        <tr>
+          <td data-label="Correo">{{ item.email }}</td>
+          <td data-label="Nombre">{{ item.display_name or 'Pendiente' }}</td>
+          <td data-label="Alta">{{ item.created_at }}</td>
+          <td data-label="Acciones">
+            <form method="post" action="{{ url_for('main.admin_access_delete', email=item.email) }}">
+              <button class="link-button link-danger" type="submit" onclick="return confirm('¿Eliminar administrador?');">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

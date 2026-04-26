@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div class="header-copy">
+    <p class="eyebrow app-eyebrow">Resumen</p>
+    <h2>Panel de control</h2>
+    <p class="muted">Vista rápida de actividad, expedientes y acceso al flujo de trabajo diario.</p>
+  </div>
+  <div class="header-actions">
+    {% if g.user["role"] == "admin" %}
+    <a class="button button-secondary" href="{{ url_for('main.students') }}">Ver alumnado</a>
+    <a class="button" href="{{ url_for('main.case_create') }}">Nuevo expediente</a>
+    {% endif %}
+  </div>
+</header>
+
+<section class="stats-grid">
+  <article class="stat-card stat-card-teal">
+    <span>{% if g.user["role"] == "admin" %}Alumnos activos{% else %}Acceso alumnado{% endif %}</span>
+    <strong>{{ counts.students }}</strong>
+    <p>{% if g.user["role"] == "admin" %}Base mínima cargada desde el registro del centro.{% else %}Los instructores no acceden al listado general de alumnado.{% endif %}</p>
+  </article>
+  <article class="stat-card stat-card-sand">
+    <span>Expedientes</span>
+    <strong>{{ counts.cases }}</strong>
+    <p>Total de expedientes creados en esta instancia local.</p>
+  </article>
+  <article class="stat-card stat-card-amber">
+    <span>Abiertos</span>
+    <strong>{{ counts.open_cases }}</strong>
+    <p>Seguimiento de casos todavía no cerrados.</p>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <h3>Expedientes recientes</h3>
+    <span class="muted">Últimos expedientes dados de alta</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Número</th>
+          <th>Alumno</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for case in recent_cases %}
+        <tr>
+          <td data-label="Número"><a href="{{ url_for('main.case_detail', case_id=case.id) }}">{{ case.case_number }}</a></td>
+          <td data-label="Alumno">{{ case.full_name }}</td>
+          <td data-label="Estado"><span class="status-pill">{{ status_labels.get(case.status, case.status) }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3">Todavía no hay expedientes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

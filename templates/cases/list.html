@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div class="header-copy">
+    <p class="eyebrow app-eyebrow">Procedimiento</p>
+    <h2>Expedientes</h2>
+    <p class="muted">Seguimiento del flujo disciplinario con orden documental y control visual de estados.</p>
+  </div>
+  {% if g.user["role"] == "admin" %}
+  <a class="button" href="{{ url_for('main.case_create') }}">Nuevo expediente</a>
+  {% endif %}
+</header>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Número</th>
+          <th>Alumno</th>
+          <th>Estado</th>
+          <th>Conocimiento hechos</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for case in cases %}
+        <tr>
+          <td data-label="Número">
+            <div class="cell-stack">
+              <a href="{{ url_for('main.case_detail', case_id=case.id) }}">{{ case.case_number }}</a>
+            </div>
+          </td>
+          <td data-label="Alumno">{{ case.full_name }}</td>
+          <td data-label="Estado"><span class="status-pill">{{ status_labels.get(case.status, case.status) }}</span></td>
+          <td data-label="Conocimiento hechos">{{ case.fact_known_date }}</td>
+          <td data-label="Acciones">
+            <div class="row-actions">
+              {% if g.user["role"] == "admin" %}
+              <a href="{{ url_for('main.case_edit', case_id=case.id) }}">Editar</a>
+              <form method="post" action="{{ url_for('main.case_delete', case_id=case.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este expediente?');">
+                <button class="link-button link-danger" type="submit">Borrar</button>
+              </form>
+              {% else %}
+              <a href="{{ url_for('main.case_detail', case_id=case.id) }}">Abrir</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">No hay expedientes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div class="header-copy">
+    <h2>{% if student %}Editar alumno{% else %}Nuevo alumno{% endif %}</h2>
+  </div>
+  {% if student %}
+  <form method="post" action="{{ url_for('main.student_delete', student_id=student.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este alumno?');">
+    <button class="button button-danger" type="submit">Borrar alumno</button>
+  </form>
+  {% endif %}
+</header>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    <label>
+      Nombre completo
+      <input type="text" name="full_name" required value="{{ student.full_name if student else '' }}">
+    </label>
+    <label>
+      Curso
+      <input type="text" name="course_name" required value="{{ student.course_name if student else '' }}">
+    </label>
+    <label>
+      Grupo
+      <input type="text" name="group_name" required value="{{ student.group_name if student else '' }}">
+    </label>
+    <label class="full-width">
+      Representantes legales
+      <input type="text" name="guardians_name" required value="{{ student.guardians_name if student else '' }}">
+    </label>
+    <label>
+      Teléfono
+      <input type="text" name="contact_phone" value="{{ student.contact_phone if student else '' }}">
+    </label>
+    <label>
+      Email
+      <input type="email" name="contact_email" value="{{ student.contact_email if student else '' }}">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="is_minor" {% if not student or student.is_minor %}checked{% endif %}>
+      Menor de edad
+    </label>
+    <div class="full-width actions">
+      <button class="button" type="submit">Guardar</button>
+      <a class="button button-secondary" href="{{ url_for('main.students') }}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}
