@@ -1517,24 +1517,16 @@ def case_generate_document(case_id: int):
         flash(f"Documento generado, pero no se ha podido preparar la firma: {exc}", "warning")
     else:
         if signature_request and signature_email:
-            signer_email = normalize_email(signature_request["signer_email"])
-            creator_email = current_user_email()
-            if signer_email and signer_email != creator_email:
-                send_signature_notification(
-                    signature_request["signer_name"],
-                    signature_request["signer_email"],
-                    generated_document["template_name"],
-                    generated_document["id"],
-                )
-                flash(
-                    f"Se ha avisado a {signature_request['signer_name']} para que firme {generated_document['template_name']}.",
-                    "info",
-                )
-            else:
-                flash(
-                    f"{generated_document['template_name']} ha quedado preparado para tu firma.",
-                    "info",
-                )
+            send_signature_notification(
+                signature_request["signer_name"],
+                signature_request["signer_email"],
+                generated_document["template_name"],
+                generated_document["id"],
+            )
+            flash(
+                f"Se ha avisado a {signature_request['signer_name']} para que firme {generated_document['template_name']}.",
+                "info",
+            )
             log_action("signature_request", "document", case_id, generated_document["template_name"])
     if inferred_status == "propuesta_resolucion":
         refreshed_case = db.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
