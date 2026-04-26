@@ -1050,6 +1050,18 @@ textarea {
   padding-left: 18px;
 }
 
+.signature-preview {
+  width: 100%;
+  min-height: 640px;
+  border: 1px solid rgba(221, 215, 203, 0.85);
+  border-radius: 18px;
+  background: #fff;
+}
+
+.text-danger {
+  color: #b9382a;
+}
+
 .pre-wrap {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

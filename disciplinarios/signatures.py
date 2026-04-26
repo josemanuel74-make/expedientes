@@ -1,32 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 import shutil
-import sqlite3
 import subprocess
 import tempfile
-import uuid
 
 
 class SignatureIntegrationError(RuntimeError):
     pass
 
 
-@dataclass
-class PortafirmasRequest:
-    external_document_id: str
-    pdf_path: Path
-    signer_name: str
-    signer_email: str
-    signer_role: str
+SIGNABLE_DOCS = {f"{number:02d}" for number in range(1, 13)}
+DIRECTOR_SIGNED_DOCS = {"01", "04", "10", "11", "12"}
+
+
+def document_requires_signature(doc_number: str | None) -> bool:
+    return bool(doc_number and doc_number in SIGNABLE_DOCS)
 
 
 def infer_signer(case_row, doc_number: str, app_config) -> tuple[str, str, str]:
-    if doc_number in {"01", "10", "11", "12"}:
-        name = (app_config.get("SIGNATURE_ADMIN_NAME") or "").strip()
-        email = (app_config.get("SIGNATURE_ADMIN_EMAIL") or "").strip().lower()
-        role = "admin"
+    if doc_number in DIRECTOR_SIGNED_DOCS:
+        name = (app_config.get("SIGNATURE_ADMIN_NAME") or "José Manuel Rodríguez García").strip()
+        email = (app_config.get("SIGNATURE_ADMIN_EMAIL") or "josemanuel.rodriguez@edumelilla.es").strip().lower()
+        role = "director"
     else:
         name = (case_row["instructor_name"] or "").strip()
         email = (case_row["instructor_email"] or "").strip().lower()
@@ -68,85 +65,33 @@ def convert_docx_to_pdf(source_docx: Path, destination_dir: Path, soffice_binary
         return output_pdf
 
 
-def get_portafirmas_paths(app_config) -> tuple[Path, Path]:
-    base_dir_value = (app_config.get("PORTAFIRMAS_BASE_DIR") or "").strip()
-    db_value = (app_config.get("PORTAFIRMAS_DB") or "").strip()
-    uploads_value = (app_config.get("PORTAFIRMAS_UPLOADS_DIR") or "").strip()
-
-    if base_dir_value:
-        base_dir = Path(base_dir_value)
-        db_path = Path(db_value) if db_value else base_dir / "portafirmas.db"
-        uploads_dir = Path(uploads_value) if uploads_value else base_dir / "uploads"
-    else:
-        raise SignatureIntegrationError("La integración con portafirmas no está configurada en este entorno.")
-
-    if not db_path.exists():
-        raise SignatureIntegrationError("No se encuentra la base de datos del portafirmas.")
-    if not uploads_dir.exists():
-        raise SignatureIntegrationError("No se encuentra la carpeta de subida del portafirmas.")
-
-    return db_path, uploads_dir
-
-
-def enqueue_portafirmas_request(app_config, source_docx: Path, display_name: str, signer_name: str, signer_email: str, signer_role: str) -> PortafirmasRequest:
-    db_path, uploads_dir = get_portafirmas_paths(app_config)
-    generated_dir = source_docx.parent / "pdf"
-    pdf_path = convert_docx_to_pdf(source_docx, generated_dir, app_config.get("SOFFICE_BINARY", "soffice"))
-
-    external_document_id = str(uuid.uuid4())
-    stored_filename = f"{external_document_id}_{display_name}"
-    upload_target = uploads_dir / stored_filename
-    shutil.copy2(pdf_path, upload_target)
-
-    signature_id = str(uuid.uuid4())
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO documents (id, filename, total_signatures)
-            VALUES (?, ?, ?)
-            """,
-            (external_document_id, display_name, 1),
-        )
-        conn.execute(
-            """
-            INSERT INTO signatures (id, document_id, user_name, user_email, status)
-            VALUES (?, ?, ?, ?, 'PENDING')
-            """,
-            (signature_id, external_document_id, signer_name, signer_email),
-        )
-        conn.commit()
-
-    return PortafirmasRequest(
-        external_document_id=external_document_id,
-        pdf_path=pdf_path,
-        signer_name=signer_name,
-        signer_email=signer_email,
-        signer_role=signer_role,
+def build_signature_extra_params(signer_name: str, reference_text: str) -> str:
+    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+    visible_signature_text = (
+        "FIRMADO\n"
+        "ELECTRONICAMENTE\n"
+        f"{signer_name}\n"
+        f"{timestamp}\n"
+        "IES LEOPOLDO QUEIPO"
+    )
+    return (
+        "signaturePage=1\n"
+        "signingReason=Documento firmado en Expedientes disciplinarios\n"
+        "signaturePositionOnPageLowerLeftX=18\n"
+        "signaturePositionOnPageLowerLeftY=20\n"
+        "signaturePositionOnPageUpperRightX=118\n"
+        "signaturePositionOnPageUpperRightY=156\n"
+        "layer2FontFamily=1\n"
+        "layer2FontSize=7\n"
+        "layer2FontColor=#B71C1C\n"
+        "layer2FontStyle=1\n"
+        f"layer2Text={visible_signature_text}\n"
+        f"layer4Text={reference_text}\n"
     )
 
 
-def fetch_portafirmas_status(app_config, external_document_id: str) -> str:
-    if not external_document_id:
-        return "not_sent"
-
-    db_path, _uploads_dir = get_portafirmas_paths(app_config)
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT status
-            FROM signatures
-            WHERE document_id = ?
-            """,
-            (external_document_id,),
-        ).fetchall()
-
-    if not rows:
-        return "missing"
-
-    statuses = {str(row["status"] or "").upper() for row in rows}
-    if statuses == {"SIGNED"}:
-        return "signed"
-    if "PENDING" in statuses:
-        return "pending_signature"
-    return "unknown"
+def build_signed_pdf_path(unsigned_pdf: Path, signer_role: str) -> Path:
+    suffix = "director" if signer_role == "director" else "instructor"
+    signed_dir = unsigned_pdf.parent / "signed"
+    signed_dir.mkdir(parents=True, exist_ok=True)
+    return signed_dir / f"{unsigned_pdf.stem} - firmado-{suffix}.pdf"

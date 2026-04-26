@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
 from datetime import date, datetime, timedelta
 import io
 from pathlib import Path
 import re
+import secrets
+import shutil
 import zipfile
 
 from flask import (
@@ -11,10 +14,12 @@ from flask import (
     current_app,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
     send_file,
+    session,
     url_for,
 )
 import xlrd
@@ -34,8 +39,10 @@ from .documents import (
 )
 from .signatures import (
     SignatureIntegrationError,
-    enqueue_portafirmas_request,
-    fetch_portafirmas_status,
+    build_signature_extra_params,
+    build_signed_pdf_path,
+    convert_docx_to_pdf,
+    document_requires_signature,
     infer_signer,
 )
 
@@ -232,7 +239,8 @@ AUDIT_ACTION_LABELS = {
     "generate": "Documento generado",
     "delete": "Borrado",
     "import": "Importación",
-    "signature_request": "Envío a firma",
+    "signature_request": "Firma solicitada",
+    "sign": "Documento firmado",
 }
 
 
@@ -344,11 +352,12 @@ def get_case_documents(case_id: int):
         """
         SELECT generated_documents.*, users.display_name, users.email,
                signature_requests.id AS signature_request_id,
-               signature_requests.external_document_id,
                signature_requests.signer_name,
                signature_requests.signer_email,
                signature_requests.signer_role,
                signature_requests.status AS signature_status,
+               signature_requests.pdf_path,
+               signature_requests.signed_pdf_path,
                signature_requests.sent_at,
                signature_requests.completed_at,
                signature_requests.last_error
@@ -360,29 +369,7 @@ def get_case_documents(case_id: int):
         """,
         (case_id,),
     ).fetchall()
-    hydrated = []
-    for row in rows:
-        item = dict(row)
-        if item.get("external_document_id"):
-            try:
-                live_status = fetch_portafirmas_status(current_app.config, item["external_document_id"])
-            except SignatureIntegrationError:
-                live_status = item.get("signature_status") or "pending_send"
-            if live_status != item.get("signature_status"):
-                update_fields = ["status = ?"]
-                update_values = [live_status]
-                if live_status == "signed" and not item.get("completed_at"):
-                    update_fields.append("completed_at = CURRENT_TIMESTAMP")
-                get_db().execute(
-                    f"UPDATE signature_requests SET {', '.join(update_fields)} WHERE id = ?",
-                    (*update_values, item["signature_request_id"]),
-                )
-                item["signature_status"] = live_status
-                if live_status == "signed" and not item.get("completed_at"):
-                    item["completed_at"] = datetime.now().isoformat(timespec="seconds")
-        hydrated.append(item)
-    get_db().commit()
-    return hydrated
+    return [dict(row) for row in rows]
 
 
 def next_document_version(case_id: int, doc_number: str | None, template_name: str) -> int:
@@ -410,18 +397,16 @@ def next_document_version(case_id: int, doc_number: str | None, template_name: s
 
 def signature_status_label(status: str | None) -> str:
     labels = {
-        "pending_send": "Pendiente de envío",
+        "pending_send": "Pendiente de preparar",
         "pending_signature": "Pendiente de firma",
         "signed": "Firmado",
-        "missing": "No encontrado",
-        "unknown": "Estado desconocido",
-        "failed": "Error de envío",
+        "failed": "Error de firma",
     }
     return labels.get(status or "", "Sin enviar")
 
 
-def portafirmas_enabled() -> bool:
-    return bool((current_app.config.get("PORTAFIRMAS_BASE_DIR") or "").strip())
+def signature_enabled() -> bool:
+    return True
 
 
 def save_case_field_overrides(case_id: int, values: dict[str, str]) -> None:
@@ -704,18 +689,119 @@ def latest_documents_by_doc_number(case_id: int) -> list:
     ).fetchall()
 
 
-def send_signature_notification(signer_name: str, signer_email: str, document_label: str) -> None:
-    portafirmas_url = (current_app.config.get("PORTAFIRMAS_BASE_URL") or "").strip()
-    if not portafirmas_url:
-        return
+def get_signature_csrf_token() -> str:
+    token = session.get("signature_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["signature_csrf_token"] = token
+    return token
+
+
+def signature_sign_url(document_id: int) -> str:
+    return f"{current_app.config['APP_BASE_URL'].rstrip('/')}{url_for('main.signature_sign_page', document_id=document_id)}"
+
+
+def send_signature_notification(signer_name: str, signer_email: str, document_label: str, document_id: int) -> None:
     send_email_message(
         signer_email,
         f"Documento pendiente de firma: {document_label}",
         (
             f"Tienes un documento pendiente de firma: {document_label}.\n\n"
-            f"Accede al portafirmas para revisarlo y firmarlo:\n{portafirmas_url.rstrip('/')}/inbox"
+            f"Accede a Expedientes disciplinarios para revisarlo y firmarlo:\n{signature_sign_url(document_id)}"
         ),
     )
+
+
+def ensure_signature_request(case_row, document_row, requested_by_user_id: int | None) -> tuple[dict | None, str | None]:
+    doc_number = document_row["doc_number"] or infer_doc_number_from_template_name(document_row["template_name"])
+    if not document_requires_signature(doc_number):
+        return None, None
+
+    db = get_db()
+    existing = db.execute(
+        "SELECT * FROM signature_requests WHERE generated_document_id = ?",
+        (document_row["id"],),
+    ).fetchone()
+    if existing:
+        return dict(existing), None
+
+    signer_name, signer_email, signer_role = infer_signer(case_row, doc_number or "", current_app.config)
+    db.execute(
+        """
+        INSERT INTO signature_requests (
+            generated_document_id, signer_name, signer_email, signer_role,
+            status, requested_by_user_id, sent_at
+        )
+        VALUES (?, ?, ?, ?, 'pending_signature', ?, CURRENT_TIMESTAMP)
+        """,
+        (
+            document_row["id"],
+            signer_name,
+            signer_email,
+            signer_role,
+            requested_by_user_id,
+        ),
+    )
+    request_row = db.execute(
+        "SELECT * FROM signature_requests WHERE generated_document_id = ?",
+        (document_row["id"],),
+    ).fetchone()
+    db.commit()
+    return dict(request_row), signer_email
+
+
+def current_user_can_sign(document_row: dict) -> bool:
+    return (
+        bool(g.user)
+        and bool(document_row.get("signature_request_id"))
+        and bool(document_row.get("is_latest"))
+        and normalize_email(document_row.get("signer_email") or "") == current_user_email()
+        and (document_row.get("signature_status") or "") == "pending_signature"
+    )
+
+
+def get_signature_request_for_document(document_id: int):
+    return get_db().execute(
+        """
+        SELECT signature_requests.*, generated_documents.case_id, generated_documents.template_name,
+               generated_documents.doc_number, generated_documents.version_number,
+               generated_documents.is_latest, generated_documents.output_path
+        FROM signature_requests
+        JOIN generated_documents ON generated_documents.id = signature_requests.generated_document_id
+        WHERE generated_document_id = ?
+        """,
+        (document_id,),
+    ).fetchone()
+
+
+def build_unsigned_pdf(document_row, signature_row) -> Path:
+    source_docx = Path(document_row["output_path"])
+    unsigned_dir = source_docx.parent / "pdf"
+    pdf_path = convert_docx_to_pdf(source_docx, unsigned_dir, current_app.config.get("SOFFICE_BINARY", "soffice"))
+    if signature_row:
+        get_db().execute(
+            "UPDATE signature_requests SET pdf_path = ? WHERE id = ?",
+            (str(pdf_path), signature_row["id"]),
+        )
+        get_db().commit()
+    return pdf_path
+
+
+def backfill_signature_requests_for_case(case_row) -> None:
+    db = get_db()
+    latest_documents = db.execute(
+        """
+        SELECT *
+        FROM generated_documents
+        WHERE case_id = ? AND is_latest = 1
+        """,
+        (case_row["id"],),
+    ).fetchall()
+    for document in latest_documents:
+        try:
+            ensure_signature_request(case_row, document, g.user["id"] if g.user else None)
+        except SignatureIntegrationError:
+            continue
 
 
 @main_bp.get("/")
@@ -1134,20 +1220,24 @@ def case_delete(case_id: int):
         return redirect(url_for("main.cases"))
 
     documents = db.execute(
-        "SELECT output_path FROM generated_documents WHERE case_id = ?",
+        """
+        SELECT generated_documents.output_path, signature_requests.pdf_path, signature_requests.signed_pdf_path
+        FROM generated_documents
+        LEFT JOIN signature_requests ON signature_requests.generated_document_id = generated_documents.id
+        WHERE generated_documents.case_id = ?
+        """,
         (case_id,),
     ).fetchall()
     for document in documents:
-        path = Path(document["output_path"])
-        if path.exists():
-            path.unlink()
+        for key in ("output_path", "pdf_path", "signed_pdf_path"):
+            if document[key]:
+                path = Path(document[key])
+                if path.exists():
+                    path.unlink()
 
     case_folder = Path(current_app.config["GENERATED_DOCS_DIR"]) / f"case-{case_id}"
     if case_folder.exists():
-        try:
-            case_folder.rmdir()
-        except OSError:
-            pass
+        shutil.rmtree(case_folder, ignore_errors=True)
 
     db.execute("DELETE FROM cases WHERE id = ?", (case_id,))
     db.commit()
@@ -1164,6 +1254,7 @@ def case_detail(case_id: int):
     if not user_can_access_case(case):
         flash("No tienes permiso para ver este expediente.", "error")
         return redirect(url_for("main.cases"))
+    backfill_signature_requests_for_case(case)
     documents = get_case_documents(case_id)
     templates = template_candidates(Path(current_app.config["PROJECT_ROOT"]))
     template_items = template_options(case_id, templates)
@@ -1176,7 +1267,9 @@ def case_detail(case_id: int):
         next_docs=next_docs,
         alerts=build_case_alerts(case),
         timeline_items=get_case_timeline(case_id),
-        portafirmas_enabled=portafirmas_enabled(),
+        signature_enabled=signature_enabled(),
+        current_user_email=current_user_email(),
+        current_user_can_sign=current_user_can_sign,
         signature_status_label=signature_status_label,
         status_labels=STATUS_LABELS,
     )
@@ -1398,13 +1491,14 @@ def case_generate_document(case_id: int):
             "UPDATE generated_documents SET is_latest = 0 WHERE case_id = ? AND doc_number = ?",
             (case_id, doc_number),
         )
-    db.execute(
+    insert_cursor = db.execute(
         """
         INSERT INTO generated_documents (case_id, template_name, doc_number, version_number, is_latest, output_path, created_by_user_id)
         VALUES (?, ?, ?, ?, 1, ?, ?)
         """,
         (case_id, template_name, doc_number, version_number, str(output_path), g.user["id"]),
     )
+    generated_document_id = insert_cursor.lastrowid
     inferred_status = infer_status_from_template_name(template_name)
     if inferred_status:
         db.execute(
@@ -1412,6 +1506,22 @@ def case_generate_document(case_id: int):
             (inferred_status, case_id),
         )
     db.commit()
+    generated_document = db.execute("SELECT * FROM generated_documents WHERE id = ?", (generated_document_id,)).fetchone()
+    signature_request = None
+    signature_email = None
+    try:
+        signature_request, signature_email = ensure_signature_request(case, generated_document, g.user["id"])
+    except SignatureIntegrationError as exc:
+        flash(f"Documento generado, pero no se ha podido preparar la firma: {exc}", "warning")
+    else:
+        if signature_request and signature_email:
+            send_signature_notification(
+                signature_request["signer_name"],
+                signature_request["signer_email"],
+                generated_document["template_name"],
+                generated_document["id"],
+            )
+            log_action("signature_request", "document", case_id, generated_document["template_name"])
     if inferred_status == "propuesta_resolucion":
         refreshed_case = db.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
         instructor_email = normalize_email(refreshed_case["instructor_email"] or "")
@@ -1441,68 +1551,8 @@ def case_generate_document(case_id: int):
 @main_bp.post("/documents/<int:document_id>/send-for-signature")
 @login_required
 def send_document_for_signature(document_id: int):
-    db = get_db()
-    document = db.execute("SELECT * FROM generated_documents WHERE id = ?", (document_id,)).fetchone()
-    if document is None:
-        flash("El documento no existe.", "error")
-        return redirect(url_for("main.dashboard"))
-
-    case = db.execute("SELECT * FROM cases WHERE id = ?", (document["case_id"],)).fetchone()
-    if not user_can_access_case(case):
-        flash("No tienes permiso para enviar este documento a firma.", "error")
-        return redirect(url_for("main.cases"))
-
-    if not document["is_latest"]:
-        flash("Solo se puede enviar a firma la última versión de cada documento.", "error")
-        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
-
-    existing_request = db.execute(
-        "SELECT id FROM signature_requests WHERE generated_document_id = ?",
-        (document_id,),
-    ).fetchone()
-    if existing_request:
-        flash("Ese documento ya está enviado a firma o ya tiene seguimiento asociado.", "error")
-        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
-
-    doc_number = document["doc_number"] or infer_doc_number_from_template_name(document["template_name"])
-    try:
-        signer_name, signer_email, signer_role = infer_signer(case, doc_number or "", current_app.config)
-        request_info = enqueue_portafirmas_request(
-            current_app.config,
-            Path(document["output_path"]),
-            f"{Path(document['output_path']).stem}.pdf",
-            signer_name,
-            signer_email,
-            signer_role,
-        )
-    except SignatureIntegrationError as exc:
-        flash(str(exc), "error")
-        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
-
-    db.execute(
-        """
-        INSERT INTO signature_requests (
-            generated_document_id, external_document_id, signer_name, signer_email,
-            signer_role, status, pdf_path, requested_by_user_id, sent_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """,
-        (
-            document_id,
-            request_info.external_document_id,
-            request_info.signer_name,
-            request_info.signer_email,
-            request_info.signer_role,
-            "pending_signature",
-            str(request_info.pdf_path),
-            g.user["id"],
-        ),
-    )
-    db.commit()
-    send_signature_notification(request_info.signer_name, request_info.signer_email, document["template_name"])
-    log_action("signature_request", "document", document["case_id"], document["template_name"])
-    flash(f"Documento enviado a firma para {request_info.signer_name}.", "success")
-    return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+    flash("La firma ya se prepara automáticamente al generar el documento.", "info")
+    return redirect(request.referrer or url_for("main.cases"))
 
 
 @main_bp.get("/cases/<int:case_id>/export")
@@ -1513,7 +1563,8 @@ def export_case_zip(case_id: int):
         flash("No tienes permiso para exportar este expediente.", "error")
         return redirect(url_for("main.cases"))
 
-    latest_documents = latest_documents_by_doc_number(case_id)
+    latest_documents = get_case_documents(case_id)
+    latest_documents = [document for document in latest_documents if document["is_latest"]]
     if not latest_documents:
         flash("Todavía no hay documentos generados para exportar.", "error")
         return redirect(url_for("main.case_detail", case_id=case_id))
@@ -1524,6 +1575,10 @@ def export_case_zip(case_id: int):
             file_path = Path(document["output_path"])
             if file_path.exists():
                 archive.write(file_path, arcname=file_path.name)
+            if document.get("signed_pdf_path"):
+                signed_path = Path(document["signed_pdf_path"])
+                if signed_path.exists():
+                    archive.write(signed_path, arcname=signed_path.name)
 
     buffer.seek(0)
     zip_name = f"expediente-{safe_filename(case['case_number'])}.zip"
@@ -1544,21 +1599,230 @@ def download_document(document_id: int):
     return send_file(row["output_path"], as_attachment=True)
 
 
+@main_bp.get("/documents/<int:document_id>/sign")
+@login_required
+def signature_sign_page(document_id: int):
+    document = get_signature_request_for_document(document_id)
+    if document is None:
+        flash("El documento no tiene una firma pendiente asociada.", "error")
+        return redirect(url_for("main.dashboard"))
+
+    case = get_case(document["case_id"])
+    if not user_can_access_case(case):
+        flash("No tienes permiso para acceder a este expediente.", "error")
+        return redirect(url_for("main.cases"))
+
+    if normalize_email(document["signer_email"]) != current_user_email():
+        flash("Este documento no te corresponde para firma.", "error")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    if not document["is_latest"]:
+        flash("Solo se puede firmar la última versión de cada documento.", "error")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    if (document["signature_status"] or "") == "signed":
+        flash("Ese documento ya está firmado.", "info")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    return render_template(
+        "signatures/sign.html",
+        case=case,
+        document=document,
+        csrf_token=get_signature_csrf_token(),
+    )
+
+
+@main_bp.get("/documents/<int:document_id>/signature-preview")
+@login_required
+def signature_preview(document_id: int):
+    document = get_signature_request_for_document(document_id)
+    if document is None:
+        return redirect(url_for("main.dashboard"))
+
+    case = get_case(document["case_id"])
+    if not user_can_access_case(case):
+        flash("No tienes permiso para ver esta vista previa.", "error")
+        return redirect(url_for("main.cases"))
+
+    if (document["signature_status"] or "") == "signed" and document["signed_pdf_path"]:
+        preview_path = Path(document["signed_pdf_path"])
+    else:
+        try:
+            preview_path = build_unsigned_pdf(document, document)
+        except SignatureIntegrationError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    return send_file(preview_path, mimetype="application/pdf")
+
+
+@main_bp.get("/api/signatures/<int:document_id>/prepare")
+@login_required
+def prepare_signature(document_id: int):
+    document = get_signature_request_for_document(document_id)
+    if document is None:
+        return jsonify({"error": "El documento no tiene firma pendiente."}), 404
+
+    if normalize_email(document["signer_email"]) != current_user_email():
+        return jsonify({"error": "No autorizado."}), 403
+
+    if not document["is_latest"]:
+        return jsonify({"error": "Solo se puede firmar la última versión."}), 409
+
+    if (document["signature_status"] or "") != "pending_signature":
+        return jsonify({"error": "La firma ya no está pendiente."}), 409
+
+    try:
+        pdf_path = build_unsigned_pdf(document, document)
+        pdf_base64 = base64.b64encode(pdf_path.read_bytes()).decode("utf-8")
+    except SignatureIntegrationError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    detail_url = signature_sign_url(document_id)
+    extra_params = build_signature_extra_params(document["signer_name"], detail_url)
+    return jsonify(
+        {
+            "status": "success",
+            "pdf_base64": pdf_base64,
+            "extra_params": extra_params,
+        }
+    )
+
+
+@main_bp.post("/api/signatures/<int:document_id>/save")
+@login_required
+def save_signature(document_id: int):
+    document = get_signature_request_for_document(document_id)
+    if document is None:
+        return jsonify({"error": "El documento no tiene firma pendiente."}), 404
+
+    if normalize_email(document["signer_email"]) != current_user_email():
+        return jsonify({"error": "No autorizado."}), 403
+
+    if not document["is_latest"]:
+        return jsonify({"error": "Solo se puede firmar la última versión."}), 409
+
+    expected_token = session.get("signature_csrf_token", "")
+    received_token = request.headers.get("X-CSRF-Token", "")
+    if not expected_token or not received_token or received_token != expected_token:
+        return jsonify({"error": "CSRF token inválido."}), 403
+
+    if (document["signature_status"] or "") == "signed":
+        return jsonify({"error": "El documento ya está firmado."}), 409
+
+    payload = request.get_json(silent=True) or {}
+    signed_b64 = payload.get("signed_b64", "")
+    if not signed_b64:
+        return jsonify({"error": "No se ha recibido el PDF firmado."}), 400
+
+    try:
+        signed_bytes = base64.b64decode(signed_b64, validate=True)
+    except Exception:
+        return jsonify({"error": "La firma recibida no es válida."}), 400
+
+    if not signed_bytes.startswith(b"%PDF"):
+        return jsonify({"error": "El documento firmado no es un PDF válido."}), 400
+
+    unsigned_pdf = Path(document["pdf_path"]) if document["pdf_path"] else build_unsigned_pdf(document, document)
+    signed_path = build_signed_pdf_path(unsigned_pdf, document["signer_role"])
+    signed_path.write_bytes(signed_bytes)
+
+    db = get_db()
+    db.execute(
+        """
+        UPDATE signature_requests
+        SET status = 'signed',
+            signed_pdf_path = ?,
+            completed_at = CURRENT_TIMESTAMP,
+            last_error = NULL
+        WHERE id = ?
+        """,
+        (str(signed_path), document["id"]),
+    )
+    db.commit()
+    log_action("sign", "document", document["case_id"], document["template_name"])
+    return jsonify({"status": "success"})
+
+
+@main_bp.get("/signatures/<int:document_id>/download")
+@login_required
+def download_signed_document(document_id: int):
+    document = get_signature_request_for_document(document_id)
+    if document is None or not document["signed_pdf_path"]:
+        flash("No existe un PDF firmado para este documento.", "error")
+        return redirect(url_for("main.dashboard"))
+
+    case = get_case(document["case_id"])
+    if not user_can_access_case(case):
+        flash("No tienes permiso para descargar este PDF firmado.", "error")
+        return redirect(url_for("main.cases"))
+
+    return send_file(document["signed_pdf_path"], as_attachment=True)
+
+
+@main_bp.route("/storage", methods=("GET", "POST"))
+@main_bp.route("/retriever", methods=("GET", "POST"))
+def autofirma_bridge():
+    operation = request.values.get("op", "")
+    item_id = request.values.get("id", "")
+
+    if operation == "put":
+        payload = request.values.get("dat", "")
+        if not item_id or not payload:
+            return ("err-01:=Missing parameters", 400, {"Content-Type": "text/plain; charset=utf-8"})
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO intermediate_store (id, payload, created_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, created_at = CURRENT_TIMESTAMP
+            """,
+            (item_id, payload),
+        )
+        db.commit()
+        return ("OK", 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+    if operation == "get":
+        if not item_id:
+            return ("err-01:=Missing id", 400, {"Content-Type": "text/plain; charset=utf-8"})
+        row = get_db().execute("SELECT payload FROM intermediate_store WHERE id = ?", (item_id,)).fetchone()
+        if not row:
+            return ("err-06:=No data", 200, {"Content-Type": "text/plain; charset=utf-8"})
+        return (row["payload"], 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+    return ("OK", 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+
 @main_bp.post("/documents/<int:document_id>/delete")
 @admin_required
 def delete_document(document_id: int):
     db = get_db()
-    row = db.execute("SELECT * FROM generated_documents WHERE id = ?", (document_id,)).fetchone()
+    row = db.execute(
+        """
+        SELECT generated_documents.*, signature_requests.pdf_path, signature_requests.signed_pdf_path
+        FROM generated_documents
+        LEFT JOIN signature_requests ON signature_requests.generated_document_id = generated_documents.id
+        WHERE generated_documents.id = ?
+        """,
+        (document_id,),
+    ).fetchone()
     if row is None:
         flash("El documento no existe.", "error")
         return redirect(url_for("main.dashboard"))
 
-    path = Path(row["output_path"])
-    if path.exists():
-        path.unlink()
+    for key in ("output_path", "pdf_path", "signed_pdf_path"):
+        if row[key]:
+            path = Path(row[key])
+            if path.exists():
+                path.unlink()
 
-    parent = path.parent
+    parent = Path(row["output_path"]).parent
     if parent.exists():
+        shutil.rmtree(parent / "signed", ignore_errors=True)
+        try:
+            (parent / "pdf").rmdir()
+        except OSError:
+            pass
         try:
             parent.rmdir()
         except OSError:

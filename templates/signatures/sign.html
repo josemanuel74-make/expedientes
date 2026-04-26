@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div class="header-copy">
+    <p class="eyebrow app-eyebrow">Firma</p>
+    <h2>{{ document.template_name }}</h2>
+    <p class="muted">{{ case.case_number }} · {{ case.full_name }}</p>
+  </div>
+  <div class="header-actions">
+    <span class="status-pill">{{ document.signer_role == "director" and "Firma de dirección" or "Firma de instructor" }}</span>
+    <a class="button button-secondary" href="{{ url_for('main.case_detail', case_id=case.id) }}">Volver al expediente</a>
+  </div>
+</header>
+
+<section class="detail-grid">
+  <article class="panel">
+    <h3>Documento a firmar</h3>
+    <dl class="summary-list">
+      <dt>Plantilla</dt><dd>{{ document.template_name }}</dd>
+      <dt>Versión</dt><dd>v{{ "%02d"|format(document.version_number or 1) }}</dd>
+      <dt>Firmante</dt><dd>{{ document.signer_name }}</dd>
+      <dt>Correo</dt><dd>{{ document.signer_email }}</dd>
+    </dl>
+    <div class="actions">
+      <button class="button" id="sign-button" type="button">Firmar con AutoFirma</button>
+      <a class="button button-secondary" href="{{ url_for('main.signature_preview', document_id=document.generated_document_id) }}" target="_blank" rel="noopener">Abrir PDF</a>
+    </div>
+    <p class="muted" id="signature-feedback">La firma se hará sobre el PDF generado a partir del DOCX actual.</p>
+    <p class="muted">Este paso requiere que AutoFirma esté instalado y disponible en el equipo desde el que firmas.</p>
+  </article>
+
+  <article class="panel">
+    <h3>Vista previa</h3>
+    <iframe
+      class="signature-preview"
+      src="{{ url_for('main.signature_preview', document_id=document.generated_document_id) }}"
+      title="Vista previa del documento a firmar"
+    ></iframe>
+  </article>
+</section>
+
+<script src="{{ url_for('static', filename='js/autoscript.js') }}"></script>
+<script>
+  (() => {
+    const signButton = document.getElementById("sign-button");
+    const feedback = document.getElementById("signature-feedback");
+    const csrfToken = {{ csrf_token|tojson }};
+    const prepareUrl = {{ url_for('main.prepare_signature', document_id=document.generated_document_id)|tojson }};
+    const saveUrl = {{ url_for('main.save_signature', document_id=document.generated_document_id)|tojson }};
+    const redirectUrl = {{ url_for('main.case_detail', case_id=case.id)|tojson }};
+
+    const setFeedback = (message, isError = false) => {
+      feedback.textContent = message;
+      feedback.classList.toggle("text-danger", isError);
+    };
+
+    signButton.addEventListener("click", async () => {
+      signButton.disabled = true;
+      setFeedback("Preparando PDF para firma...");
+      try {
+        const prepareResponse = await fetch(prepareUrl);
+        const prepareData = await prepareResponse.json();
+        if (!prepareResponse.ok) {
+          throw new Error(prepareData.error || "No se ha podido preparar el documento para firma.");
+        }
+        if (typeof AutoScript === "undefined") {
+          throw new Error("AutoFirma no está disponible en este equipo.");
+        }
+
+        AutoScript.sign(
+          prepareData.pdf_base64,
+          "SHA256withRSA",
+          "PAdES",
+          prepareData.extra_params,
+          async (signedB64) => {
+            try {
+              setFeedback("Guardando firma...");
+              const saveResponse = await fetch(saveUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-CSRF-Token": csrfToken,
+                },
+                body: JSON.stringify({ signed_b64: signedB64 }),
+              });
+              const saveData = await saveResponse.json();
+              if (!saveResponse.ok) {
+                throw new Error(saveData.error || "No se ha podido guardar la firma.");
+              }
+              window.location.href = redirectUrl;
+            } catch (error) {
+              signButton.disabled = false;
+              setFeedback(error.message || "No se ha podido guardar la firma.", true);
+            }
+          },
+          (_type, message) => {
+            signButton.disabled = false;
+            setFeedback(message || "La firma se ha cancelado o ha fallado.", true);
+          }
+        );
+      } catch (error) {
+        signButton.disabled = false;
+        setFeedback(error.message || "No se ha podido preparar la firma.", true);
+      }
+    });
+  })();
+</script>
+{% endblock %}

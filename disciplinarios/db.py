@@ -80,6 +80,9 @@ def migrate_db(db):
         )
         """
     )
+    signature_request_columns = _table_columns(db, "signature_requests")
+    if "signed_pdf_path" not in signature_request_columns:
+        db.execute("ALTER TABLE signature_requests ADD COLUMN signed_pdf_path TEXT")
 
     db.execute(
         """
@@ -88,6 +91,15 @@ def migrate_db(db):
             added_by_user_id INTEGER,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (added_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS intermediate_store (
+            id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            payload TEXT NOT NULL
         )
         """
     )

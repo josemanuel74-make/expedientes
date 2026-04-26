@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS signature_requests (
     signer_role TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending_send',
     pdf_path TEXT,
+    signed_pdf_path TEXT,
     requested_by_user_id INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     sent_at TEXT,
@@ -130,4 +131,10 @@ CREATE TABLE IF NOT EXISTS signature_requests (
     last_error TEXT,
     FOREIGN KEY (generated_document_id) REFERENCES generated_documents(id) ON DELETE CASCADE,
     FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS intermediate_store (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    payload TEXT NOT NULL
 );

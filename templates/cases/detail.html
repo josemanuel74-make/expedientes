@@ -137,10 +137,10 @@
           <td data-label="Acciones">
             <div class="row-actions">
               <a href="{{ url_for('main.download_document', document_id=document.id) }}">Descargar</a>
-              {% if portafirmas_enabled and document.is_latest and not document.signature_request_id %}
-              <form method="post" action="{{ url_for('main.send_document_for_signature', document_id=document.id) }}">
-                <button class="link-button" type="submit">Enviar a portafirmas</button>
-              </form>
+              {% if document.signature_status == "signed" and document.signed_pdf_path %}
+              <a href="{{ url_for('main.download_signed_document', document_id=document.id) }}">Descargar firmado</a>
+              {% elif current_user_can_sign(document) %}
+              <a href="{{ url_for('main.signature_sign_page', document_id=document.id) }}">Firmar PDF</a>
               {% endif %}
               {% if g.user["role"] == "admin" %}
               <form
