@@ -1,0 +1,15 @@
+[Unit]
+Description=Gunicorn de Expedientes disciplinarios
+After=network.target
+
+[Service]
+User=expedientes
+Group=www-data
+WorkingDirectory=/opt/expedientes
+EnvironmentFile=/opt/expedientes/.env
+ExecStart=/opt/expedientes/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -127,3 +127,12 @@ Para producción, la idea correcta es:
 - servicio `systemd` para `gunicorn`
 - configuración `nginx`
 - backup automático de base de datos y documentos
+
+## Preparación del VPS
+
+He dejado plantillas y guía base en:
+
+- [deploy/PRODUCCION.md](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/deploy/PRODUCCION.md)
+- [deploy/.env.production.example](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/deploy/.env.production.example)
+- [deploy/expedientes.service](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/deploy/expedientes.service)
+- [deploy/nginx.expedientes.conf](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/deploy/nginx.expedientes.conf)
