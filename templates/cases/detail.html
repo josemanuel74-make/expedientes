@@ -8,6 +8,7 @@
   </div>
   <div class="header-actions">
     <span class="status-pill">{{ status_labels.get(case.status, case.status) }}</span>
+    <a class="button button-secondary" href="{{ url_for('main.export_case_zip', case_id=case.id) }}">Exportar ZIP</a>
     {% if g.user["role"] == "admin" %}
     <a class="button" href="{{ url_for('main.case_edit', case_id=case.id) }}">Editar expediente</a>
     <form method="post" action="{{ url_for('main.case_delete', case_id=case.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este expediente?');">
@@ -40,6 +41,20 @@
     </ul>
   </article>
 </section>
+
+{% if alerts %}
+<section class="panel">
+  <h3>Avisos</h3>
+  <div class="alerts-stack">
+    {% for alert in alerts %}
+    <article class="case-alert case-alert-{{ alert.level }}">
+      <strong>{{ alert.title }}</strong>
+      <p>{{ alert.body }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <section class="detail-grid">
   <article class="panel">
@@ -92,6 +107,8 @@
       <thead>
         <tr>
           <th>Plantilla</th>
+          <th>Versión</th>
+          <th>Firma</th>
           <th>Fecha</th>
           <th></th>
         </tr>
@@ -100,10 +117,24 @@
         {% for document in documents %}
         <tr>
           <td data-label="Plantilla">{{ document.template_name }}</td>
+          <td data-label="Versión">v{{ "%02d"|format(document.version_number or 1) }}{% if document.is_latest %} · actual{% endif %}</td>
+          <td data-label="Firma">
+            <div class="cell-stack">
+              <span>{{ signature_status_label(document.signature_status) }}</span>
+              {% if document.signer_name %}
+              <span class="muted">{{ document.signer_name }}</span>
+              {% endif %}
+            </div>
+          </td>
           <td data-label="Fecha">{{ document.created_at }}</td>
           <td data-label="Acciones">
             <div class="row-actions">
               <a href="{{ url_for('main.download_document', document_id=document.id) }}">Descargar</a>
+              {% if portafirmas_enabled and document.is_latest and not document.signature_request_id %}
+              <form method="post" action="{{ url_for('main.send_document_for_signature', document_id=document.id) }}">
+                <button class="link-button" type="submit">Enviar a portafirmas</button>
+              </form>
+              {% endif %}
               {% if g.user["role"] == "admin" %}
               <form method="post" action="{{ url_for('main.delete_document', document_id=document.id) }}" onsubmit="return confirm('¿Seguro que quieres borrar este documento generado?');">
                 <button class="link-button link-danger" type="submit">Borrar</button>
@@ -113,10 +144,32 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="3">Todavía no hay documentos generados.</td></tr>
+        <tr><td colspan="5">Todavía no hay documentos generados.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+</section>
+
+<section class="panel">
+  <h3>Cronología</h3>
+  {% if timeline_items %}
+  <div class="timeline">
+    {% for item in timeline_items %}
+    <article class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-body">
+        <strong>{{ item.title }}</strong>
+        <p class="muted">{{ item.created_at }} · {{ item.actor }}</p>
+        {% if item.details %}
+        <p class="pre-wrap">{{ item.details }}</p>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">Todavía no hay actividad registrada en este expediente.</p>
+  {% endif %}
 </section>
 {% endblock %}

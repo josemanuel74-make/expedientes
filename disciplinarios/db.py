@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+import re
 
 import click
 from flask import current_app, g
@@ -50,6 +51,36 @@ def migrate_db(db):
     if "instructor_email" not in case_columns:
         db.execute("ALTER TABLE cases ADD COLUMN instructor_email TEXT")
 
+    generated_document_columns = _table_columns(db, "generated_documents")
+    if "doc_number" not in generated_document_columns:
+        db.execute("ALTER TABLE generated_documents ADD COLUMN doc_number TEXT")
+    if "version_number" not in generated_document_columns:
+        db.execute("ALTER TABLE generated_documents ADD COLUMN version_number INTEGER NOT NULL DEFAULT 1")
+    if "is_latest" not in generated_document_columns:
+        db.execute("ALTER TABLE generated_documents ADD COLUMN is_latest INTEGER NOT NULL DEFAULT 1")
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS signature_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            generated_document_id INTEGER NOT NULL UNIQUE,
+            external_document_id TEXT,
+            signer_name TEXT NOT NULL,
+            signer_email TEXT NOT NULL,
+            signer_role TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending_send',
+            pdf_path TEXT,
+            requested_by_user_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            sent_at TEXT,
+            completed_at TEXT,
+            last_error TEXT,
+            FOREIGN KEY (generated_document_id) REFERENCES generated_documents(id) ON DELETE CASCADE,
+            FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+        """
+    )
+
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS allowed_admin_emails (
@@ -60,6 +91,42 @@ def migrate_db(db):
         )
         """
     )
+
+    backfill_generated_document_versions(db)
+
+
+def backfill_generated_document_versions(db):
+    rows = db.execute(
+        """
+        SELECT id, case_id, template_name, created_at
+        FROM generated_documents
+        ORDER BY case_id, created_at, id
+        """
+    ).fetchall()
+    grouped_versions: dict[tuple[int, str], int] = {}
+    latest_by_group: dict[tuple[int, str], int] = {}
+
+    for row in rows:
+        match = re.match(r"^\s*(\d{2})\b", row["template_name"] or "")
+        doc_number = match.group(1) if match else ""
+        group_key = (row["case_id"], doc_number or row["template_name"])
+        version_number = grouped_versions.get(group_key, 0) + 1
+        grouped_versions[group_key] = version_number
+        latest_by_group[group_key] = row["id"]
+        db.execute(
+            """
+            UPDATE generated_documents
+            SET doc_number = ?, version_number = ?, is_latest = 0
+            WHERE id = ?
+            """,
+            (doc_number, version_number, row["id"]),
+        )
+
+    for document_id in latest_by_group.values():
+        db.execute(
+            "UPDATE generated_documents SET is_latest = 1 WHERE id = ?",
+            (document_id,),
+        )
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS login_tokens (

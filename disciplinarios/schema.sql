@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS generated_documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     case_id INTEGER NOT NULL,
     template_name TEXT NOT NULL,
+    doc_number TEXT,
+    version_number INTEGER NOT NULL DEFAULT 1,
+    is_latest INTEGER NOT NULL DEFAULT 1,
     output_path TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by_user_id INTEGER,
@@ -100,4 +103,22 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     details TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS signature_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    generated_document_id INTEGER NOT NULL UNIQUE,
+    external_document_id TEXT,
+    signer_name TEXT NOT NULL,
+    signer_email TEXT NOT NULL,
+    signer_role TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending_send',
+    pdf_path TEXT,
+    requested_by_user_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TEXT,
+    completed_at TEXT,
+    last_error TEXT,
+    FOREIGN KEY (generated_document_id) REFERENCES generated_documents(id) ON DELETE CASCADE,
+    FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 );

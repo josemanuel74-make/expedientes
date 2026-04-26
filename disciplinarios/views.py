@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import io
 from pathlib import Path
 import re
+import zipfile
 
 from flask import (
     Blueprint,
@@ -29,6 +31,12 @@ from .documents import (
     merge_document_data,
     template_candidates,
     template_fields,
+)
+from .signatures import (
+    SignatureIntegrationError,
+    enqueue_portafirmas_request,
+    fetch_portafirmas_status,
+    infer_signer,
 )
 
 main_bp = Blueprint("main", __name__)
@@ -218,6 +226,15 @@ ROLE_ALLOWED_DOCS = {
     "instructor": {"02", "03", "04", "05", "06", "07", "08", "09"},
 }
 
+AUDIT_ACTION_LABELS = {
+    "create": "Alta",
+    "update": "Edición",
+    "generate": "Documento generado",
+    "delete": "Borrado",
+    "import": "Importación",
+    "signature_request": "Envío a firma",
+}
+
 
 def full_guardians_name(row_values: list[str]) -> str:
     first = " ".join(
@@ -320,6 +337,91 @@ def get_case_field_overrides(case_id: int) -> dict[str, str]:
         (case_id,),
     ).fetchall()
     return {row["field_name"]: row["field_value"] for row in rows}
+
+
+def get_case_documents(case_id: int):
+    rows = get_db().execute(
+        """
+        SELECT generated_documents.*, users.display_name, users.email,
+               signature_requests.id AS signature_request_id,
+               signature_requests.external_document_id,
+               signature_requests.signer_name,
+               signature_requests.signer_email,
+               signature_requests.signer_role,
+               signature_requests.status AS signature_status,
+               signature_requests.sent_at,
+               signature_requests.completed_at,
+               signature_requests.last_error
+        FROM generated_documents
+        LEFT JOIN users ON users.id = generated_documents.created_by_user_id
+        LEFT JOIN signature_requests ON signature_requests.generated_document_id = generated_documents.id
+        WHERE generated_documents.case_id = ?
+        ORDER BY generated_documents.doc_number, generated_documents.version_number DESC, generated_documents.created_at DESC
+        """,
+        (case_id,),
+    ).fetchall()
+    hydrated = []
+    for row in rows:
+        item = dict(row)
+        if item.get("external_document_id"):
+            try:
+                live_status = fetch_portafirmas_status(current_app.config, item["external_document_id"])
+            except SignatureIntegrationError:
+                live_status = item.get("signature_status") or "pending_send"
+            if live_status != item.get("signature_status"):
+                update_fields = ["status = ?"]
+                update_values = [live_status]
+                if live_status == "signed" and not item.get("completed_at"):
+                    update_fields.append("completed_at = CURRENT_TIMESTAMP")
+                get_db().execute(
+                    f"UPDATE signature_requests SET {', '.join(update_fields)} WHERE id = ?",
+                    (*update_values, item["signature_request_id"]),
+                )
+                item["signature_status"] = live_status
+                if live_status == "signed" and not item.get("completed_at"):
+                    item["completed_at"] = datetime.now().isoformat(timespec="seconds")
+        hydrated.append(item)
+    get_db().commit()
+    return hydrated
+
+
+def next_document_version(case_id: int, doc_number: str | None, template_name: str) -> int:
+    db = get_db()
+    if doc_number:
+        row = db.execute(
+            """
+            SELECT COALESCE(MAX(version_number), 0) AS version_number
+            FROM generated_documents
+            WHERE case_id = ? AND doc_number = ?
+            """,
+            (case_id, doc_number),
+        ).fetchone()
+    else:
+        row = db.execute(
+            """
+            SELECT COALESCE(MAX(version_number), 0) AS version_number
+            FROM generated_documents
+            WHERE case_id = ? AND template_name = ?
+            """,
+            (case_id, template_name),
+        ).fetchone()
+    return int(row["version_number"] or 0) + 1
+
+
+def signature_status_label(status: str | None) -> str:
+    labels = {
+        "pending_send": "Pendiente de envío",
+        "pending_signature": "Pendiente de firma",
+        "signed": "Firmado",
+        "missing": "No encontrado",
+        "unknown": "Estado desconocido",
+        "failed": "Error de envío",
+    }
+    return labels.get(status or "", "Sin enviar")
+
+
+def portafirmas_enabled() -> bool:
+    return bool((current_app.config.get("PORTAFIRMAS_BASE_DIR") or "").strip())
 
 
 def save_case_field_overrides(case_id: int, values: dict[str, str]) -> None:
@@ -453,6 +555,110 @@ def instructor_phase_finished(status: str) -> bool:
     return status not in ACTIVE_INSTRUCTOR_STATUSES
 
 
+def parse_iso_date(raw_value: str | None) -> date | None:
+    if not raw_value:
+        return None
+    try:
+        return datetime.strptime(raw_value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def build_case_alerts(case) -> list[dict]:
+    today = date.today()
+    alerts: list[dict] = []
+
+    fact_known_date = parse_iso_date(case["fact_known_date"])
+    opening_date = parse_iso_date(case["opening_date"])
+
+    if fact_known_date:
+        instruction_deadline = fact_known_date + timedelta(days=10)
+        if case["status"] == "iniciado" and today > instruction_deadline:
+            alerts.append(
+                {
+                    "level": "error",
+                    "title": "Plazo de incoación vencido",
+                    "body": f"Han pasado más de 10 días desde el conocimiento de los hechos. Fecha límite: {instruction_deadline.strftime('%d/%m/%Y')}.",
+                }
+            )
+        elif case["status"] == "iniciado" and (instruction_deadline - today).days <= 2:
+            alerts.append(
+                {
+                    "level": "warning",
+                    "title": "Plazo de incoación próximo",
+                    "body": f"Quedan {(instruction_deadline - today).days} día(s) para acordar la instrucción. Fecha límite: {instruction_deadline.strftime('%d/%m/%Y')}.",
+                }
+            )
+
+    if opening_date:
+        investigation_deadline = opening_date + timedelta(days=7)
+        resolution_deadline = opening_date + timedelta(days=30)
+
+        if case["status"] in ACTIVE_INSTRUCTOR_STATUSES and today > investigation_deadline:
+            alerts.append(
+                {
+                    "level": "warning",
+                    "title": "Instrucción fuera de plazo orientativo",
+                    "body": f"Se han superado los 7 días de instrucción. Fecha de referencia: {investigation_deadline.strftime('%d/%m/%Y')}.",
+                }
+            )
+        elif case["status"] in ACTIVE_INSTRUCTOR_STATUSES and (investigation_deadline - today).days <= 2:
+            alerts.append(
+                {
+                    "level": "info",
+                    "title": "Fin de instrucción próximo",
+                    "body": f"El plazo orientativo de 7 días vence el {investigation_deadline.strftime('%d/%m/%Y')}.",
+                }
+            )
+
+        if case["status"] != FINAL_CASE_STATUS and today > resolution_deadline:
+            alerts.append(
+                {
+                    "level": "error",
+                    "title": "Plazo máximo de resolución vencido",
+                    "body": f"Se ha superado el mes máximo desde la iniciación. Fecha límite: {resolution_deadline.strftime('%d/%m/%Y')}.",
+                }
+            )
+        elif case["status"] != FINAL_CASE_STATUS and (resolution_deadline - today).days <= 5:
+            alerts.append(
+                {
+                    "level": "warning",
+                    "title": "Plazo máximo de resolución próximo",
+                    "body": f"Quedan {(resolution_deadline - today).days} día(s) para resolver. Fecha límite: {resolution_deadline.strftime('%d/%m/%Y')}.",
+                }
+            )
+
+    return alerts
+
+
+def get_case_timeline(case_id: int) -> list[dict]:
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT audit_logs.*, users.display_name, users.email
+        FROM audit_logs
+        LEFT JOIN users ON users.id = audit_logs.user_id
+        WHERE audit_logs.entity_id = ?
+          AND audit_logs.entity_type IN ('case', 'document')
+        ORDER BY audit_logs.created_at DESC, audit_logs.id DESC
+        """,
+        (case_id,),
+    ).fetchall()
+    items = []
+    for row in rows:
+        actor = row["display_name"] or row["email"] or "Sistema"
+        label = AUDIT_ACTION_LABELS.get(row["action"], row["action"].capitalize())
+        items.append(
+            {
+                "created_at": row["created_at"],
+                "title": label,
+                "actor": actor,
+                "details": row["details"] or "",
+            }
+        )
+    return items
+
+
 def template_options(case_id: int, templates: list[Path]) -> list[dict]:
     generated_numbers = generated_doc_numbers(case_id)
     options = []
@@ -484,6 +690,32 @@ def next_available_doc_numbers(case_id: int) -> set[str]:
         if document_is_available(doc_number, generated_numbers) and user_can_manage_doc_number(doc_number):
             available.add(doc_number)
     return available
+
+
+def latest_documents_by_doc_number(case_id: int) -> list:
+    return get_db().execute(
+        """
+        SELECT *
+        FROM generated_documents
+        WHERE case_id = ? AND is_latest = 1
+        ORDER BY doc_number, version_number
+        """,
+        (case_id,),
+    ).fetchall()
+
+
+def send_signature_notification(signer_name: str, signer_email: str, document_label: str) -> None:
+    portafirmas_url = (current_app.config.get("PORTAFIRMAS_BASE_URL") or "").strip()
+    if not portafirmas_url:
+        return
+    send_email_message(
+        signer_email,
+        f"Documento pendiente de firma: {document_label}",
+        (
+            f"Tienes un documento pendiente de firma: {document_label}.\n\n"
+            f"Accede al portafirmas para revisarlo y firmarlo:\n{portafirmas_url.rstrip('/')}/inbox"
+        ),
+    )
 
 
 @main_bp.get("/")
@@ -932,10 +1164,7 @@ def case_detail(case_id: int):
     if not user_can_access_case(case):
         flash("No tienes permiso para ver este expediente.", "error")
         return redirect(url_for("main.cases"))
-    documents = db.execute(
-        "SELECT * FROM generated_documents WHERE case_id = ? ORDER BY created_at DESC",
-        (case_id,),
-    ).fetchall()
+    documents = get_case_documents(case_id)
     templates = template_candidates(Path(current_app.config["PROJECT_ROOT"]))
     template_items = template_options(case_id, templates)
     next_docs = next_available_doc_numbers(case_id)
@@ -945,6 +1174,10 @@ def case_detail(case_id: int):
         documents=documents,
         template_items=template_items,
         next_docs=next_docs,
+        alerts=build_case_alerts(case),
+        timeline_items=get_case_timeline(case_id),
+        portafirmas_enabled=portafirmas_enabled(),
+        signature_status_label=signature_status_label,
         status_labels=STATUS_LABELS,
     )
 
@@ -1154,16 +1387,23 @@ def case_generate_document(case_id: int):
         )
 
     output_dir = Path(current_app.config["GENERATED_DOCS_DIR"]) / f"case-{case_id}"
-    output_name = f"{safe_filename(template_path.stem)} - {safe_filename(case['case_number'])}.docx"
+    version_number = next_document_version(case_id, doc_number, template_name)
+    version_suffix = f" - v{version_number:02d}"
+    output_name = f"{safe_filename(template_path.stem)} - {safe_filename(case['case_number'])}{version_suffix}.docx"
     output_path = output_dir / output_name
     generate_document(template_path, output_path, data)
 
+    if doc_number:
+        db.execute(
+            "UPDATE generated_documents SET is_latest = 0 WHERE case_id = ? AND doc_number = ?",
+            (case_id, doc_number),
+        )
     db.execute(
         """
-        INSERT INTO generated_documents (case_id, template_name, output_path, created_by_user_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO generated_documents (case_id, template_name, doc_number, version_number, is_latest, output_path, created_by_user_id)
+        VALUES (?, ?, ?, ?, 1, ?, ?)
         """,
-        (case_id, template_name, str(output_path), g.user["id"]),
+        (case_id, template_name, doc_number, version_number, str(output_path), g.user["id"]),
     )
     inferred_status = infer_status_from_template_name(template_name)
     if inferred_status:
@@ -1196,6 +1436,98 @@ def case_generate_document(case_id: int):
     log_action("generate", "document", case_id, template_name)
     flash("Documento generado.", "success")
     return redirect(url_for("main.case_detail", case_id=case_id))
+
+
+@main_bp.post("/documents/<int:document_id>/send-for-signature")
+@login_required
+def send_document_for_signature(document_id: int):
+    db = get_db()
+    document = db.execute("SELECT * FROM generated_documents WHERE id = ?", (document_id,)).fetchone()
+    if document is None:
+        flash("El documento no existe.", "error")
+        return redirect(url_for("main.dashboard"))
+
+    case = db.execute("SELECT * FROM cases WHERE id = ?", (document["case_id"],)).fetchone()
+    if not user_can_access_case(case):
+        flash("No tienes permiso para enviar este documento a firma.", "error")
+        return redirect(url_for("main.cases"))
+
+    if not document["is_latest"]:
+        flash("Solo se puede enviar a firma la última versión de cada documento.", "error")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    existing_request = db.execute(
+        "SELECT id FROM signature_requests WHERE generated_document_id = ?",
+        (document_id,),
+    ).fetchone()
+    if existing_request:
+        flash("Ese documento ya está enviado a firma o ya tiene seguimiento asociado.", "error")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    doc_number = document["doc_number"] or infer_doc_number_from_template_name(document["template_name"])
+    try:
+        signer_name, signer_email, signer_role = infer_signer(case, doc_number or "", current_app.config)
+        request_info = enqueue_portafirmas_request(
+            current_app.config,
+            Path(document["output_path"]),
+            f"{Path(document['output_path']).stem}.pdf",
+            signer_name,
+            signer_email,
+            signer_role,
+        )
+    except SignatureIntegrationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    db.execute(
+        """
+        INSERT INTO signature_requests (
+            generated_document_id, external_document_id, signer_name, signer_email,
+            signer_role, status, pdf_path, requested_by_user_id, sent_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (
+            document_id,
+            request_info.external_document_id,
+            request_info.signer_name,
+            request_info.signer_email,
+            request_info.signer_role,
+            "pending_signature",
+            str(request_info.pdf_path),
+            g.user["id"],
+        ),
+    )
+    db.commit()
+    send_signature_notification(request_info.signer_name, request_info.signer_email, document["template_name"])
+    log_action("signature_request", "document", document["case_id"], document["template_name"])
+    flash(f"Documento enviado a firma para {request_info.signer_name}.", "success")
+    return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+
+@main_bp.get("/cases/<int:case_id>/export")
+@login_required
+def export_case_zip(case_id: int):
+    case = get_case(case_id)
+    if not user_can_access_case(case):
+        flash("No tienes permiso para exportar este expediente.", "error")
+        return redirect(url_for("main.cases"))
+
+    latest_documents = latest_documents_by_doc_number(case_id)
+    if not latest_documents:
+        flash("Todavía no hay documentos generados para exportar.", "error")
+        return redirect(url_for("main.case_detail", case_id=case_id))
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for document in latest_documents:
+            file_path = Path(document["output_path"])
+            if file_path.exists():
+                archive.write(file_path, arcname=file_path.name)
+
+    buffer.seek(0)
+    zip_name = f"expediente-{safe_filename(case['case_number'])}.zip"
+    return send_file(buffer, as_attachment=True, download_name=zip_name, mimetype="application/zip")
 
 
 @main_bp.get("/documents/<int:document_id>/download")

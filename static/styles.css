@@ -818,6 +818,42 @@ textarea {
   gap: 8px;
 }
 
+.alerts-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.case-alert {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: #fffdf8;
+}
+
+.case-alert strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.case-alert p {
+  margin: 0;
+}
+
+.case-alert-warning {
+  border-color: #d89a46;
+  background: #fff8ea;
+}
+
+.case-alert-error {
+  border-color: #c66a5e;
+  background: #fff1ef;
+}
+
+.case-alert-info {
+  border-color: #78a091;
+  background: #eef8f5;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -874,6 +910,31 @@ textarea {
   background: #e9f8f5;
   color: var(--accent);
   font-size: 0.84rem;
+}
+
+.timeline {
+  display: grid;
+  gap: 14px;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+}
+
+.timeline-body p {
+  margin: 4px 0 0;
 }
 
 .flash-stack {
