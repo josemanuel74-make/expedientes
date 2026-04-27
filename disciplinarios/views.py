@@ -110,6 +110,8 @@ DATETIME_FIELD_PATTERNS = {
     }
 }
 
+AUTO_MANAGED_DOCUMENT_FIELDS = {"firmaVisible"}
+
 
 def log_action(action: str, entity_type: str, entity_id: int | None = None, details: str = ""):
     db = get_db()
@@ -465,6 +467,8 @@ def validate_document_fields(
             errors.append(f"Falta rellenar {item['label']}.")
 
     for field_name in fields:
+        if field_name in AUTO_MANAGED_DOCUMENT_FIELDS:
+            continue
         if field_name in covered_fields:
             continue
         value = submitted_values.get(field_name, "").strip()
@@ -1343,6 +1347,7 @@ def case_document_form(case_id: int):
         }
         for field_name in fields
         if field_name not in covered_fields
+        and field_name not in AUTO_MANAGED_DOCUMENT_FIELDS
         and not (field_name == "nombreInstructor" and str(merged.get(field_name, "")).strip())
     ]
     instructors = load_instructors_from_excel(project_root)
@@ -1414,6 +1419,7 @@ def case_generate_document(case_id: int):
             }
             for field_name in fields
             if field_name not in covered_fields
+            and field_name not in AUTO_MANAGED_DOCUMENT_FIELDS
             and not (field_name == "nombreInstructor" and str(submitted_values.get(field_name, "")).strip())
         ]
         populated_date_helper_items = [
