@@ -16,34 +16,34 @@ DIRECTOR_SIGNED_DOCS = {"01", "02", "04", "10", "11", "12"}
 SIGNATURE_STYLE_OPTIONS = {
     "discreta": {
         "label": "Discreta",
-        "page": "1",
-        "x1": 370,
-        "y1": 18,
+        "page": "-1",
+        "x1": 330,
+        "y1": 108,
         "x2": 555,
-        "y2": 96,
-        "font_size": 6,
-        "font_color": "#4B5563",
+        "y2": 166,
+        "font_size": 7,
+        "font_color": "#374151",
         "font_style": 0,
     },
     "institucional": {
         "label": "Institucional",
-        "page": "1",
-        "x1": 330,
-        "y1": 18,
+        "page": "-1",
+        "x1": 296,
+        "y1": 104,
         "x2": 555,
-        "y2": 118,
-        "font_size": 7,
+        "y2": 186,
+        "font_size": 8,
         "font_color": "#0F766E",
         "font_style": 1,
     },
     "visible": {
         "label": "Muy visible",
-        "page": "1",
-        "x1": 290,
-        "y1": 18,
+        "page": "-1",
+        "x1": 248,
+        "y1": 96,
         "x2": 555,
-        "y2": 144,
-        "font_size": 8,
+        "y2": 212,
+        "font_size": 9,
         "font_color": "#B91C1C",
         "font_style": 1,
     },
@@ -108,14 +108,11 @@ def build_signature_extra_params(
 ) -> str:
     style = SIGNATURE_STYLE_OPTIONS.get(style_key, SIGNATURE_STYLE_OPTIONS["institucional"])
     timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-    role_label = "DIRECCION" if signer_role == "director" else "INSTRUCTOR"
+    role_label = "Dirección" if signer_role == "director" else "Instructor"
     visible_signature_text = (
-        "FIRMADO\n"
-        "ELECTRONICAMENTE\n"
-        f"{signer_name}\n"
+        f"Fdo.: {signer_name}\n"
         f"{role_label}\n"
-        f"{timestamp}\n"
-        "IES LEOPOLDO QUEIPO"
+        f"Fecha: {timestamp}"
     )
     return (
         f"signaturePage={style['page']}\n"
