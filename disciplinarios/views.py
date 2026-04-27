@@ -39,7 +39,7 @@ from .documents import (
 )
 from .signatures import (
     SignatureIntegrationError,
-    SIGNATURE_STYLE_OPTIONS,
+    build_firma_visible_text,
     build_signature_extra_params,
     build_signed_pdf_path,
     convert_docx_to_pdf,
@@ -791,7 +791,20 @@ def get_signature_request_for_document(document_id: int):
 def build_unsigned_pdf(document_row, signature_row) -> Path:
     source_docx = Path(document_row["output_path"])
     unsigned_dir = source_docx.parent / "pdf"
-    pdf_path = convert_docx_to_pdf(source_docx, unsigned_dir, current_app.config.get("SOFFICE_BINARY", "soffice"))
+    extra_data = None
+    if signature_row:
+        extra_data = {
+            "firmaVisible": build_firma_visible_text(
+                signature_row["signer_name"],
+                datetime.now(),
+            )
+        }
+    pdf_path = convert_docx_to_pdf(
+        source_docx,
+        unsigned_dir,
+        current_app.config.get("SOFFICE_BINARY", "soffice"),
+        extra_data=extra_data,
+    )
     if signature_row:
         get_db().execute(
             "UPDATE signature_requests SET pdf_path = ? WHERE id = ?",
@@ -1647,7 +1660,6 @@ def signature_sign_page(document_id: int):
         case=case,
         document=document,
         csrf_token=get_signature_csrf_token(),
-        signature_style_options=SIGNATURE_STYLE_OPTIONS,
     )
 
 
@@ -1691,10 +1703,6 @@ def prepare_signature(document_id: int):
     if (document["signature_status"] or "") != "pending_signature":
         return jsonify({"error": "La firma ya no está pendiente."}), 409
 
-    style_key = request.args.get("style", "institucional").strip().lower()
-    if style_key not in SIGNATURE_STYLE_OPTIONS:
-        return jsonify({"error": "El estilo de firma solicitado no es válido."}), 400
-
     try:
         pdf_path = build_unsigned_pdf(document, document)
         pdf_base64 = base64.b64encode(pdf_path.read_bytes()).decode("utf-8")
@@ -1706,14 +1714,12 @@ def prepare_signature(document_id: int):
         document["signer_name"],
         detail_url,
         document["signer_role"],
-        style_key,
     )
     return jsonify(
         {
             "status": "success",
             "pdf_base64": pdf_base64,
             "extra_params": extra_params,
-            "style": style_key,
         }
     )
 

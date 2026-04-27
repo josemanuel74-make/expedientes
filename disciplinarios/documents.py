@@ -42,6 +42,7 @@ FIELD_ALIASES = {
     "diasexpulsioncautelar": "diasExpulsionCautelar",
     "diaconsejoescolar": "diaConsejoEscolar",
     "mesconsejoescolar": "mesConsejoEscolar",
+    "firmavisible": "firmaVisible",
 }
 
 BARE_RUN_ALLOWED_FIELDS = {
@@ -75,6 +76,7 @@ FIELD_LABELS = {
     "diasExpulsionCautelar": "Días de expulsión cautelar",
     "diaConsejoEscolar": "Día del Consejo Escolar",
     "mesConsejoEscolar": "Mes del Consejo Escolar",
+    "firmaVisible": "Firma visible",
 }
 
 FIELD_HELP_TEXTS = {
@@ -343,6 +345,7 @@ def build_document_data(case_row, student_row) -> dict[str, str]:
         "diasExpulsionCautelar": case_row["precautionary_days"] or "",
         "diaConsejoEscolar": board_day,
         "mesConsejoEscolar": board_month,
+        "firmaVisible": "",
     }
 
 

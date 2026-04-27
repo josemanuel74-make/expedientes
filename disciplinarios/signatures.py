@@ -6,6 +6,10 @@ import shutil
 import subprocess
 import tempfile
 
+from docx import Document
+
+from .documents import replace_markers_in_document
+
 
 class SignatureIntegrationError(RuntimeError):
     pass
@@ -13,43 +17,6 @@ class SignatureIntegrationError(RuntimeError):
 
 SIGNABLE_DOCS = {f"{number:02d}" for number in range(1, 13)}
 DIRECTOR_SIGNED_DOCS = {"01", "02", "04", "10", "11", "12"}
-SIGNATURE_STYLE_OPTIONS = {
-    "discreta": {
-        "label": "Discreta",
-        "page": "-1",
-        "x1": 330,
-        "y1": 108,
-        "x2": 555,
-        "y2": 166,
-        "font_size": 7,
-        "font_color": "#374151",
-        "font_style": 0,
-    },
-    "institucional": {
-        "label": "Institucional",
-        "page": "-1",
-        "x1": 296,
-        "y1": 104,
-        "x2": 555,
-        "y2": 186,
-        "font_size": 8,
-        "font_color": "#0F766E",
-        "font_style": 1,
-    },
-    "visible": {
-        "label": "Muy visible",
-        "page": "-1",
-        "x1": 248,
-        "y1": 96,
-        "x2": 555,
-        "y2": 212,
-        "font_size": 9,
-        "font_color": "#B91C1C",
-        "font_style": 1,
-    },
-}
-
-
 def document_requires_signature(doc_number: str | None) -> bool:
     return bool(doc_number and doc_number in SIGNABLE_DOCS)
 
@@ -69,14 +36,28 @@ def infer_signer(case_row, doc_number: str, app_config) -> tuple[str, str, str]:
     return name, email, role
 
 
-def convert_docx_to_pdf(source_docx: Path, destination_dir: Path, soffice_binary: str = "soffice") -> Path:
+def build_firma_visible_text(signer_name: str, signed_at: datetime) -> str:
+    return f"{signer_name}\n{signed_at.strftime('%d/%m/%Y %H:%M')}"
+
+
+def convert_docx_to_pdf(
+    source_docx: Path,
+    destination_dir: Path,
+    soffice_binary: str = "soffice",
+    extra_data: dict[str, str] | None = None,
+) -> Path:
     if not source_docx.exists():
         raise SignatureIntegrationError("El documento fuente no existe.")
 
     destination_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="docx2pdf-") as tmp_dir:
         tmp_input = Path(tmp_dir) / source_docx.name
-        shutil.copy2(source_docx, tmp_input)
+        if extra_data:
+            document = Document(str(source_docx))
+            replace_markers_in_document(document, extra_data)
+            document.save(str(tmp_input))
+        else:
+            shutil.copy2(source_docx, tmp_input)
         command = [
             soffice_binary,
             "--headless",
@@ -104,28 +85,9 @@ def build_signature_extra_params(
     signer_name: str,
     reference_text: str,
     signer_role: str,
-    style_key: str = "institucional",
 ) -> str:
-    style = SIGNATURE_STYLE_OPTIONS.get(style_key, SIGNATURE_STYLE_OPTIONS["institucional"])
-    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-    role_label = "Dirección" if signer_role == "director" else "Instructor"
-    visible_signature_text = (
-        f"Fdo.: {signer_name}\n"
-        f"{role_label}\n"
-        f"Fecha: {timestamp}"
-    )
     return (
-        f"signaturePage={style['page']}\n"
         "signingReason=Documento firmado en Expedientes disciplinarios\n"
-        f"signaturePositionOnPageLowerLeftX={style['x1']}\n"
-        f"signaturePositionOnPageLowerLeftY={style['y1']}\n"
-        f"signaturePositionOnPageUpperRightX={style['x2']}\n"
-        f"signaturePositionOnPageUpperRightY={style['y2']}\n"
-        "layer2FontFamily=1\n"
-        f"layer2FontSize={style['font_size']}\n"
-        f"layer2FontColor={style['font_color']}\n"
-        f"layer2FontStyle={style['font_style']}\n"
-        f"layer2Text={visible_signature_text}\n"
         f"layer4Text={reference_text}\n"
     )
 

@@ -21,20 +21,11 @@
       <dt>Firmante</dt><dd>{{ document.signer_name }}</dd>
       <dt>Correo</dt><dd>{{ document.signer_email }}</dd>
     </dl>
-    <div class="signature-style-stack">
-      <p class="muted"><strong>Estilo de firma visible:</strong> vamos a probar tres variantes sobre el mismo PDF firmado.</p>
-      <div class="actions signature-actions">
-        {% for style_key, style in signature_style_options.items() %}
-        <button class="button{% if style_key != 'institucional' %} button-secondary{% endif %} sign-button" data-style="{{ style_key }}" type="button">
-          {{ style.label }}
-        </button>
-        {% endfor %}
-      </div>
-    </div>
     <div class="actions">
+      <button class="button" id="sign-button" type="button">Firmar con AutoFirma</button>
       <a class="button button-secondary" href="{{ url_for('main.signature_preview', document_id=document.generated_document_id) }}" target="_blank" rel="noopener">Abrir PDF</a>
     </div>
-    <p class="muted" id="signature-feedback">La firma se hará sobre el PDF generado a partir del DOCX actual.</p>
+    <p class="muted" id="signature-feedback">La zona visible de firma saldrá del campo <code>&lt;&lt;firmaVisible&gt;&gt;</code> de la plantilla.</p>
     <p class="muted">Este paso requiere que AutoFirma esté instalado y disponible en el equipo desde el que firmas.</p>
   </article>
 
@@ -51,7 +42,7 @@
 <script src="{{ url_for('static', filename='js/autoscript.js') }}"></script>
 <script>
   (() => {
-    const signButtons = Array.from(document.querySelectorAll(".sign-button"));
+    const signButton = document.getElementById("sign-button");
     const feedback = document.getElementById("signature-feedback");
     const csrfToken = {{ csrf_token|tojson }};
     const prepareUrl = {{ url_for('main.prepare_signature', document_id=document.generated_document_id)|tojson }};
@@ -85,18 +76,11 @@
       }
     });
 
-    const setButtonsDisabled = (disabled) => {
-      signButtons.forEach((button) => {
-        button.disabled = disabled;
-      });
-    };
-
-    signButtons.forEach((signButton) => signButton.addEventListener("click", async () => {
-      const styleKey = signButton.dataset.style || "institucional";
-      setButtonsDisabled(true);
-      setFeedback(`Preparando PDF para firma (${signButton.textContent.trim()})...`);
+    signButton.addEventListener("click", async () => {
+      signButton.disabled = true;
+      setFeedback("Preparando PDF para firma...");
       try {
-        const prepareResponse = await fetch(`${prepareUrl}?style=${encodeURIComponent(styleKey)}`);
+        const prepareResponse = await fetch(prepareUrl);
         const prepareData = await prepareResponse.json();
         if (!prepareResponse.ok) {
           throw new Error(prepareData.error || "No se ha podido preparar el documento para firma.");
@@ -125,20 +109,20 @@
               }
               window.location.href = redirectUrl;
             } catch (error) {
-              setButtonsDisabled(false);
+              signButton.disabled = false;
               setFeedback(error.message || "No se ha podido guardar la firma.", true);
             }
           },
           (_type, message) => {
-            setButtonsDisabled(false);
+            signButton.disabled = false;
             setFeedback(message || "La firma se ha cancelado o ha fallado.", true);
           }
         );
       } catch (error) {
-        setButtonsDisabled(false);
+        signButton.disabled = false;
         setFeedback(error.message || "No se ha podido preparar la firma.", true);
       }
-    }));
+    });
   })();
 </script>
 {% endblock %}
