@@ -14,6 +14,7 @@
     <section class="access-block">
       <h2>1. Solicitar código</h2>
       <form method="post" class="access-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="request">
         <label>
           Correo electrónico
@@ -26,6 +27,7 @@
     <section class="access-block">
       <h2>2. Entrar con código</h2>
       <form method="post" class="access-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="verify">
         <label>
           Correo electrónico

@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+import secrets
 
-from flask import Flask, request
+from flask import Flask, jsonify, request, session
 
 from .auth import auth_bp
 from .db import init_app
@@ -70,6 +71,32 @@ def create_app() -> Flask:
     init_app(app)
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
+
+    def get_csrf_token() -> str:
+        token = session.get("csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["csrf_token"] = token
+        return token
+
+    @app.context_processor
+    def inject_csrf_token():
+        return {"csrf_token": get_csrf_token()}
+
+    @app.before_request
+    def protect_against_csrf():
+        if request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        if request.endpoint in {"static", "main.autofirma_bridge"}:
+            return None
+
+        expected_token = session.get("csrf_token", "")
+        received_token = request.headers.get("X-CSRF-Token", "") or request.form.get("csrf_token", "")
+        if not expected_token or not received_token or not secrets.compare_digest(expected_token, received_token):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "CSRF token inválido."}), 403
+            return ("CSRF token inválido.", 403)
+        return None
 
     @app.after_request
     def apply_security_headers(response):

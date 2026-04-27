@@ -707,10 +707,10 @@ def latest_documents_by_doc_number(case_id: int) -> list:
 
 
 def get_signature_csrf_token() -> str:
-    token = session.get("signature_csrf_token")
+    token = session.get("csrf_token")
     if not token:
         token = secrets.token_urlsafe(32)
-        session["signature_csrf_token"] = token
+        session["csrf_token"] = token
     return token
 
 
@@ -1758,7 +1758,7 @@ def save_signature(document_id: int):
     if not document["is_latest"]:
         return jsonify({"error": "Solo se puede firmar la última versión."}), 409
 
-    expected_token = session.get("signature_csrf_token", "")
+    expected_token = session.get("csrf_token", "")
     received_token = request.headers.get("X-CSRF-Token", "")
     if not expected_token or not received_token or received_token != expected_token:
         return jsonify({"error": "CSRF token inválido."}), 403

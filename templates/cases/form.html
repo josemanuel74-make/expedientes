@@ -8,6 +8,7 @@
 
 <section class="panel">
   <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="status" value="{{ case.status if case else 'iniciado' }}">
     <label>
       Número de expediente

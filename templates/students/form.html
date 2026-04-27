@@ -13,6 +13,7 @@
     data-confirm-message="Se eliminará la ficha de {{ student.full_name }}. Si tiene expedientes asociados, la aplicación seguirá bloqueando el borrado."
     data-confirm-submit="Borrar alumno"
   >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="button button-danger" type="submit">Borrar alumno</button>
   </form>
   {% endif %}
@@ -20,6 +21,7 @@
 
 <section class="panel">
   <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>
       Nombre completo
       <input type="text" name="full_name" required value="{{ student.full_name if student else '' }}">

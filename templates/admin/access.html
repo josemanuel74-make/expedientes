@@ -9,6 +9,7 @@
 
 <section class="panel">
   <form method="post" action="{{ url_for('main.admin_access_add') }}" class="form-grid compact">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>
       Correo del administrador
       <input type="email" name="email" required placeholder="nombre@edumelilla.es">
@@ -45,6 +46,7 @@
               data-confirm-message="Se retirará el acceso total a {{ item.email }}. Esta persona dejará de poder entrar como administrador."
               data-confirm-submit="Eliminar administrador"
             >
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="link-button link-danger" type="submit">Eliminar</button>
             </form>
           </td>

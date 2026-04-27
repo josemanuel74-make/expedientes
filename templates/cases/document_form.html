@@ -21,6 +21,7 @@
   {% endif %}
 
   <form method="post" action="{{ url_for('main.case_generate_document', case_id=case.id) }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="template_name" value="{{ template_name }}">
     {% for item in date_helper_items %}
       <label>

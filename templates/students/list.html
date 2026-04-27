@@ -8,6 +8,7 @@
   </div>
   <div class="actions-inline">
     <form method="post" action="{{ url_for('main.students_import') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="button button-secondary" type="submit" {% if not excel_available %}disabled{% endif %}>Importar Excel</button>
     </form>
     <a class="button" href="{{ url_for('main.student_create') }}">Nuevo alumno</a>
