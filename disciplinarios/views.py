@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import tempfile
 import zipfile
 
 from flask import (
@@ -795,20 +796,34 @@ def get_signature_request_for_document(document_id: int):
 def build_unsigned_pdf(document_row, signature_row) -> Path:
     source_docx = Path(document_row["output_path"])
     unsigned_dir = source_docx.parent / "pdf"
-    extra_data = None
-    if signature_row:
-        extra_data = {
-            "firmaVisible": build_firma_visible_text(
-                signature_row["signer_name"],
-                datetime.now(),
+    template_path = Path(current_app.config["PROJECT_ROOT"]) / document_row["template_name"]
+
+    if signature_row and template_path.exists():
+        case = get_case(document_row["case_id"])
+        student = get_db().execute(
+            "SELECT * FROM students WHERE id = ?",
+            (case["student_id"],),
+        ).fetchone()
+        base_data = build_document_data(case, student)
+        merged_data = merge_document_data(base_data, get_case_field_overrides(document_row["case_id"]))
+        merged_data["firmaVisible"] = build_firma_visible_text(
+            signature_row["signer_name"],
+            datetime.now(),
+        )
+        with tempfile.TemporaryDirectory(prefix="sign-docx-") as tmp_dir:
+            temp_docx = Path(tmp_dir) / template_path.name
+            generate_document(template_path, temp_docx, merged_data)
+            pdf_path = convert_docx_to_pdf(
+                temp_docx,
+                unsigned_dir,
+                current_app.config.get("SOFFICE_BINARY", "soffice"),
             )
-        }
-    pdf_path = convert_docx_to_pdf(
-        source_docx,
-        unsigned_dir,
-        current_app.config.get("SOFFICE_BINARY", "soffice"),
-        extra_data=extra_data,
-    )
+    else:
+        pdf_path = convert_docx_to_pdf(
+            source_docx,
+            unsigned_dir,
+            current_app.config.get("SOFFICE_BINARY", "soffice"),
+        )
     if signature_row:
         get_db().execute(
             "UPDATE signature_requests SET pdf_path = ? WHERE id = ?",
