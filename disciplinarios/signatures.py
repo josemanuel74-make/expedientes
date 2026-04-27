@@ -12,7 +12,7 @@ class SignatureIntegrationError(RuntimeError):
 
 
 SIGNABLE_DOCS = {f"{number:02d}" for number in range(1, 13)}
-DIRECTOR_SIGNED_DOCS = {"01", "04", "10", "11", "12"}
+DIRECTOR_SIGNED_DOCS = {"01", "02", "04", "10", "11", "12"}
 SIGNATURE_STYLE_OPTIONS = {
     "discreta": {
         "label": "Discreta",
