@@ -112,3 +112,83 @@ Cuando el VPS esté listo, el orden correcto será:
 7. configurar `systemd`
 8. configurar `nginx`
 9. emitir HTTPS
+
+## 9. Endurecimiento recomendado
+
+Estas medidas son las más rentables para proteger datos personales en producción:
+
+### SSH
+
+- desactivar acceso por contraseña si no es imprescindible
+- permitir solo clave privada
+- cambiar `PermitRootLogin` a `no`
+- limitar usuarios permitidos en SSH
+
+### Firewall
+
+- activar `ufw`
+- permitir solo:
+  - `22` o el puerto SSH real que uséis
+  - `80`
+  - `443`
+
+Ejemplo:
+
+```bash
+sudo ufw allow 50113/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+```
+
+### Protección de intentos de acceso
+
+- instalar `fail2ban`
+- vigilar especialmente `sshd` y `nginx`
+
+```bash
+sudo apt install -y fail2ban
+sudo systemctl enable fail2ban
+sudo systemctl start fail2ban
+```
+
+### Actualizaciones
+
+- aplicar actualizaciones de seguridad del sistema con frecuencia
+- reiniciar servicios cuando haga falta
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
+
+### Permisos de ficheros
+
+- `.env` solo legible por el usuario de la app
+- `instance/` y `generated_docs/` sin permisos globales de lectura
+
+Ejemplo:
+
+```bash
+chmod 600 /home/guardias/expedientes/.env
+chmod 700 /home/guardias/expedientes/instance
+chmod 700 /home/guardias/expedientes/generated_docs
+```
+
+### nginx
+
+- mantener HTTPS obligatorio
+- no publicar listados de directorio
+- no exponer rutas internas del sistema
+
+### Operación mínima segura
+
+Después de cada despliegue:
+
+```bash
+cd /home/guardias/expedientes
+git pull --ff-only
+sudo systemctl restart expedientes
+sudo systemctl status expedientes --no-pager
+sudo nginx -t
+```

@@ -910,10 +910,61 @@ textarea {
   font-size: 0.82rem;
 }
 
+.mini-pill-outline {
+  background: transparent;
+  border: 1px solid rgba(18, 59, 53, 0.18);
+}
+
+.mini-pill-success {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.mini-pill-warning {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+}
+
+.mini-pill-danger {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+}
+
+.mini-pill-muted {
+  background: rgba(103, 97, 84, 0.12);
+  color: #57534e;
+}
+
 .status-pill {
   background: #e9f8f5;
   color: var(--accent);
   font-size: 0.84rem;
+}
+
+.status-pill-success {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.status-pill-warning {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+}
+
+.status-pill-danger {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+}
+
+.status-pill-muted {
+  background: rgba(103, 97, 84, 0.12);
+  color: #57534e;
+}
+
+.document-state-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
 .timeline {

@@ -125,10 +125,28 @@
         {% for document in documents %}
         <tr>
           <td data-label="Plantilla">{{ document.template_name }}</td>
-          <td data-label="Versión">v{{ "%02d"|format(document.version_number or 1) }}{% if document.is_latest %} · actual{% endif %}</td>
+          <td data-label="Versión">
+            <div class="cell-stack">
+              <span>v{{ "%02d"|format(document.version_number or 1) }}</span>
+              <span class="document-state-pills">
+                {% if document.is_latest %}
+                <span class="mini-pill mini-pill-outline">Actual</span>
+                {% endif %}
+                {% if document.signature_status == "signed" %}
+                <span class="mini-pill mini-pill-success">Firmado</span>
+                {% elif document.signature_status == "pending_signature" %}
+                <span class="mini-pill mini-pill-warning">Pendiente de firma</span>
+                {% elif document.signature_status == "failed" %}
+                <span class="mini-pill mini-pill-danger">Error de firma</span>
+                {% else %}
+                <span class="mini-pill mini-pill-muted">Generado</span>
+                {% endif %}
+              </span>
+            </div>
+          </td>
           <td data-label="Firma">
             <div class="cell-stack">
-              <span>{{ signature_status_label(document.signature_status) }}</span>
+              <span class="status-pill status-pill-{{ signature_status_tone(document.signature_status) }}">{{ signature_status_label(document.signature_status) }}</span>
               {% if document.signer_name %}
               <span class="muted">{{ document.signer_name }}</span>
               {% endif %}
@@ -144,6 +162,9 @@
               <a href="{{ url_for('main.signature_sign_page', document_id=document.id) }}">Firmar PDF</a>
               {% endif %}
               {% if g.user["role"] == "admin" %}
+              {% if document.signature_status == "signed" %}
+              <span class="muted">Bloqueado por firma</span>
+              {% else %}
               <form
                 method="post"
                 action="{{ url_for('main.delete_document', document_id=document.id) }}"
@@ -155,6 +176,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="link-button link-danger" type="submit">Borrar</button>
               </form>
+              {% endif %}
               {% endif %}
             </div>
           </td>

@@ -245,6 +245,9 @@ AUDIT_ACTION_LABELS = {
     "import": "Importación",
     "signature_request": "Firma solicitada",
     "sign": "Documento firmado",
+    "download_docx": "DOCX descargado",
+    "download_signed_pdf": "PDF firmado descargado",
+    "download_zip": "ZIP descargado",
 }
 
 
@@ -407,6 +410,16 @@ def signature_status_label(status: str | None) -> str:
         "failed": "Error de firma",
     }
     return labels.get(status or "", "Sin enviar")
+
+
+def signature_status_tone(status: str | None) -> str:
+    tones = {
+        "pending_send": "muted",
+        "pending_signature": "warning",
+        "signed": "success",
+        "failed": "danger",
+    }
+    return tones.get(status or "", "muted")
 
 
 def signature_enabled() -> bool:
@@ -1265,6 +1278,25 @@ def case_delete(case_id: int):
         flash("El expediente no existe.", "error")
         return redirect(url_for("main.cases"))
 
+    signed_document = db.execute(
+        """
+        SELECT generated_documents.template_name, generated_documents.version_number
+        FROM generated_documents
+        JOIN signature_requests ON signature_requests.generated_document_id = generated_documents.id
+        WHERE generated_documents.case_id = ?
+          AND signature_requests.status = 'signed'
+        LIMIT 1
+        """,
+        (case_id,),
+    ).fetchone()
+    if signed_document:
+        flash(
+            f"No se puede borrar el expediente porque contiene un documento firmado: "
+            f"{signed_document['template_name']} v{int(signed_document['version_number'] or 1):02d}.",
+            "error",
+        )
+        return redirect(url_for("main.case_detail", case_id=case_id))
+
     documents = db.execute(
         """
         SELECT generated_documents.output_path, signature_requests.pdf_path, signature_requests.signed_pdf_path
@@ -1634,6 +1666,7 @@ def export_case_zip(case_id: int):
 
     buffer.seek(0)
     zip_name = f"expediente-{safe_filename(case['case_number'])}.zip"
+    log_action("download_zip", "case", case_id, zip_name)
     return send_file(buffer, as_attachment=True, download_name=zip_name, mimetype="application/zip")
 
 
@@ -1648,6 +1681,7 @@ def download_document(document_id: int):
     if not user_can_access_case(case):
         flash("No tienes permiso para descargar este documento.", "error")
         return redirect(url_for("main.cases"))
+    log_action("download_docx", "document", row["case_id"], row["template_name"])
     return send_file(row["output_path"], as_attachment=True)
 
 
@@ -1812,7 +1846,7 @@ def download_signed_document(document_id: int):
     if not user_can_access_case(case):
         flash("No tienes permiso para descargar este PDF firmado.", "error")
         return redirect(url_for("main.cases"))
-
+    log_action("download_signed_pdf", "document", document["case_id"], document["template_name"])
     return send_file(document["signed_pdf_path"], as_attachment=True)
 
 
@@ -1865,6 +1899,14 @@ def delete_document(document_id: int):
     if row is None:
         flash("El documento no existe.", "error")
         return redirect(url_for("main.dashboard"))
+
+    signature_row = db.execute(
+        "SELECT status FROM signature_requests WHERE generated_document_id = ?",
+        (document_id,),
+    ).fetchone()
+    if signature_row and signature_row["status"] == "signed":
+        flash("No se puede borrar un documento ya firmado. Si necesitas cambios, genera una nueva versión.", "error")
+        return redirect(url_for("main.case_detail", case_id=row["case_id"]))
 
     for key in ("output_path", "pdf_path", "signed_pdf_path"):
         if row[key]:
