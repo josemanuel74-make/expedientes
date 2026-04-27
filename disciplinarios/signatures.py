@@ -37,7 +37,10 @@ def infer_signer(case_row, doc_number: str, app_config) -> tuple[str, str, str]:
 
 
 def build_firma_visible_text(signer_name: str, signed_at: datetime) -> str:
-    return f"{signer_name}\n{signed_at.strftime('%d/%m/%Y %H:%M')}"
+    return (
+        f"Firmado digitalmente por {signer_name}\n"
+        f"Fecha:  {signed_at.strftime('%d/%m/%Y')} a las {signed_at.strftime('%H:%M')}"
+    )
 
 
 def convert_docx_to_pdf(
