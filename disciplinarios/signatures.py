@@ -13,6 +13,41 @@ class SignatureIntegrationError(RuntimeError):
 
 SIGNABLE_DOCS = {f"{number:02d}" for number in range(1, 13)}
 DIRECTOR_SIGNED_DOCS = {"01", "04", "10", "11", "12"}
+SIGNATURE_STYLE_OPTIONS = {
+    "discreta": {
+        "label": "Discreta",
+        "page": "1",
+        "x1": 370,
+        "y1": 18,
+        "x2": 555,
+        "y2": 96,
+        "font_size": 6,
+        "font_color": "#4B5563",
+        "font_style": 0,
+    },
+    "institucional": {
+        "label": "Institucional",
+        "page": "1",
+        "x1": 330,
+        "y1": 18,
+        "x2": 555,
+        "y2": 118,
+        "font_size": 7,
+        "font_color": "#0F766E",
+        "font_style": 1,
+    },
+    "visible": {
+        "label": "Muy visible",
+        "page": "1",
+        "x1": 290,
+        "y1": 18,
+        "x2": 555,
+        "y2": 144,
+        "font_size": 8,
+        "font_color": "#B91C1C",
+        "font_style": 1,
+    },
+}
 
 
 def document_requires_signature(doc_number: str | None) -> bool:
@@ -65,26 +100,34 @@ def convert_docx_to_pdf(source_docx: Path, destination_dir: Path, soffice_binary
         return output_pdf
 
 
-def build_signature_extra_params(signer_name: str, reference_text: str) -> str:
+def build_signature_extra_params(
+    signer_name: str,
+    reference_text: str,
+    signer_role: str,
+    style_key: str = "institucional",
+) -> str:
+    style = SIGNATURE_STYLE_OPTIONS.get(style_key, SIGNATURE_STYLE_OPTIONS["institucional"])
     timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+    role_label = "DIRECCION" if signer_role == "director" else "INSTRUCTOR"
     visible_signature_text = (
         "FIRMADO\n"
         "ELECTRONICAMENTE\n"
         f"{signer_name}\n"
+        f"{role_label}\n"
         f"{timestamp}\n"
         "IES LEOPOLDO QUEIPO"
     )
     return (
-        "signaturePage=1\n"
+        f"signaturePage={style['page']}\n"
         "signingReason=Documento firmado en Expedientes disciplinarios\n"
-        "signaturePositionOnPageLowerLeftX=18\n"
-        "signaturePositionOnPageLowerLeftY=20\n"
-        "signaturePositionOnPageUpperRightX=118\n"
-        "signaturePositionOnPageUpperRightY=156\n"
+        f"signaturePositionOnPageLowerLeftX={style['x1']}\n"
+        f"signaturePositionOnPageLowerLeftY={style['y1']}\n"
+        f"signaturePositionOnPageUpperRightX={style['x2']}\n"
+        f"signaturePositionOnPageUpperRightY={style['y2']}\n"
         "layer2FontFamily=1\n"
-        "layer2FontSize=7\n"
-        "layer2FontColor=#B71C1C\n"
-        "layer2FontStyle=1\n"
+        f"layer2FontSize={style['font_size']}\n"
+        f"layer2FontColor={style['font_color']}\n"
+        f"layer2FontStyle={style['font_style']}\n"
         f"layer2Text={visible_signature_text}\n"
         f"layer4Text={reference_text}\n"
     )

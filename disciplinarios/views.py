@@ -39,6 +39,7 @@ from .documents import (
 )
 from .signatures import (
     SignatureIntegrationError,
+    SIGNATURE_STYLE_OPTIONS,
     build_signature_extra_params,
     build_signed_pdf_path,
     convert_docx_to_pdf,
@@ -229,8 +230,8 @@ DOCUMENT_FLOW = {
 }
 
 ROLE_ALLOWED_DOCS = {
-    "admin": {"01", "10", "11", "12"},
-    "instructor": {"02", "03", "04", "05", "06", "07", "08", "09"},
+    "admin": {f"{number:02d}" for number in range(1, 13)},
+    "instructor": {"03", "05", "06", "07", "08", "09"},
 }
 
 AUDIT_ACTION_LABELS = {
@@ -1646,6 +1647,7 @@ def signature_sign_page(document_id: int):
         case=case,
         document=document,
         csrf_token=get_signature_csrf_token(),
+        signature_style_options=SIGNATURE_STYLE_OPTIONS,
     )
 
 
@@ -1689,6 +1691,10 @@ def prepare_signature(document_id: int):
     if (document["signature_status"] or "") != "pending_signature":
         return jsonify({"error": "La firma ya no está pendiente."}), 409
 
+    style_key = request.args.get("style", "institucional").strip().lower()
+    if style_key not in SIGNATURE_STYLE_OPTIONS:
+        return jsonify({"error": "El estilo de firma solicitado no es válido."}), 400
+
     try:
         pdf_path = build_unsigned_pdf(document, document)
         pdf_base64 = base64.b64encode(pdf_path.read_bytes()).decode("utf-8")
@@ -1696,12 +1702,18 @@ def prepare_signature(document_id: int):
         return jsonify({"error": str(exc)}), 400
 
     detail_url = signature_sign_url(document_id)
-    extra_params = build_signature_extra_params(document["signer_name"], detail_url)
+    extra_params = build_signature_extra_params(
+        document["signer_name"],
+        detail_url,
+        document["signer_role"],
+        style_key,
+    )
     return jsonify(
         {
             "status": "success",
             "pdf_base64": pdf_base64,
             "extra_params": extra_params,
+            "style": style_key,
         }
     )
 
