@@ -1134,7 +1134,9 @@ def cases():
 @admin_required
 def case_create():
     db = get_db()
-    students = db.execute("SELECT id, full_name FROM students ORDER BY full_name").fetchall()
+    students = db.execute(
+        "SELECT id, full_name, course_name, group_name FROM students ORDER BY full_name"
+    ).fetchall()
     instructors = load_instructors_from_excel(Path(current_app.config["PROJECT_ROOT"]))
 
     if request.method == "POST":
@@ -1200,7 +1202,9 @@ def case_create():
 def case_edit(case_id: int):
     db = get_db()
     case = db.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
-    students = db.execute("SELECT id, full_name FROM students ORDER BY full_name").fetchall()
+    students = db.execute(
+        "SELECT id, full_name, course_name, group_name FROM students ORDER BY full_name"
+    ).fetchall()
     instructors = load_instructors_from_excel(Path(current_app.config["PROJECT_ROOT"]))
     if case is None:
         return redirect(url_for("main.cases"))
