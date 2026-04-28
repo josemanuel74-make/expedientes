@@ -1353,6 +1353,7 @@ def case_detail(case_id: int):
         current_user_email=current_user_email(),
         current_user_can_sign=current_user_can_sign,
         signature_status_label=signature_status_label,
+        signature_status_tone=signature_status_tone,
         status_labels=STATUS_LABELS,
     )
 
