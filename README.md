@@ -136,3 +136,8 @@ He dejado plantillas y guía base en:
 - [deploy/.env.production.example](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/deploy/.env.production.example)
 - [deploy/expedientes.service](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/deploy/expedientes.service)
 - [deploy/nginx.expedientes.conf](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/deploy/nginx.expedientes.conf)
+
+## Manuales de uso
+
+- [MANUAL_ADMIN.md](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/MANUAL_ADMIN.md)
+- [MANUAL_INSTRUCTOR.md](/Users/jose/Library/CloudStorage/OneDrive-DirecciónProvincialdeMelilla/Proyectos/expedientes disciplinarios/MANUAL_INSTRUCTOR.md)

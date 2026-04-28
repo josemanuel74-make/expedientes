@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from datetime import date, datetime, timedelta
 import io
+from itertools import zip_longest
 from pathlib import Path
 import re
 import secrets
@@ -112,6 +113,46 @@ DATETIME_FIELD_PATTERNS = {
 }
 
 AUTO_MANAGED_DOCUMENT_FIELDS = {"firmaVisible"}
+
+
+def parse_manual_file(path: Path) -> tuple[str, list[dict]]:
+    title = "Manual"
+    sections: list[dict] = []
+    current_section: dict | None = None
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("# "):
+            title = line[2:].strip()
+            continue
+        if line.startswith("## "):
+            current_section = {"title": line[3:].strip(), "items": []}
+            sections.append(current_section)
+            continue
+        if current_section is None:
+            current_section = {"title": "Resumen", "items": []}
+            sections.append(current_section)
+
+        item_type = "text"
+        value = line
+        if re.match(r"^\d+\.\s+", line):
+            item_type = "ordered"
+            value = re.sub(r"^\d+\.\s+", "", line)
+        elif line.startswith("- "):
+            item_type = "bullet"
+            value = line[2:].strip()
+
+        current_section["items"].append({"type": item_type, "value": value})
+
+    return title, sections
+
+
+def load_manual_for_role(role: str) -> tuple[str, list[dict]]:
+    project_root = Path(current_app.config["PROJECT_ROOT"])
+    manual_path = project_root / ("MANUAL_ADMIN.md" if role == "admin" else "MANUAL_INSTRUCTOR.md")
+    return parse_manual_file(manual_path)
 
 
 def log_action(action: str, entity_type: str, entity_id: int | None = None, details: str = ""):
@@ -936,6 +977,14 @@ def dashboard():
         recent_cases=recent_cases,
         status_labels=STATUS_LABELS,
     )
+
+
+@main_bp.get("/manual")
+@login_required
+def manual():
+    role = "admin" if current_user_is_admin() else "instructor"
+    title, sections = load_manual_for_role(role)
+    return render_template("manual.html", manual_title=title, manual_sections=sections, manual_role=role)
 
 
 @main_bp.get("/admin/access")

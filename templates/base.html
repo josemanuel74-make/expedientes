@@ -24,6 +24,7 @@
           <a href="{{ url_for('main.students') }}">Alumnos</a>
           {% endif %}
           <a href="{{ url_for('main.cases') }}">Expedientes</a>
+          <a href="{{ url_for('main.manual') }}">Manual</a>
           {% if g.user["role"] == "admin" %}
           <a href="{{ url_for('main.admin_access') }}">Accesos</a>
           {% endif %}

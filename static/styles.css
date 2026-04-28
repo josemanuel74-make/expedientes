@@ -997,6 +997,47 @@ textarea {
   gap: 0.9rem;
 }
 
+.manual-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.manual-section h3 {
+  margin-top: 0;
+  margin-bottom: 0.9rem;
+}
+
+.manual-body {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.manual-body p {
+  margin: 0;
+}
+
+.manual-bullet,
+.manual-step {
+  position: relative;
+  padding-left: 1.2rem;
+}
+
+.manual-bullet::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.manual-step::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
 .timeline {
   display: grid;
   gap: 14px;

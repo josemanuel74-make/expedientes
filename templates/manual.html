@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Manual</p>
+    <h2>{{ manual_title }}</h2>
+    <p class="muted">
+      {% if manual_role == "admin" %}
+      Guía rápida para administración, jefatura de estudios y dirección.
+      {% else %}
+      Guía rápida para instructores.
+      {% endif %}
+    </p>
+  </div>
+</header>
+
+<section class="manual-grid">
+  {% for section in manual_sections %}
+  <article class="panel manual-section">
+    <h3>{{ section.title }}</h3>
+    <div class="manual-body">
+      {% for item in section.items %}
+        {% if item.type == "bullet" %}
+        <p class="manual-bullet">{{ item.value }}</p>
+        {% elif item.type == "ordered" %}
+        <p class="manual-step">{{ item.value }}</p>
+        {% else %}
+        <p>{{ item.value }}</p>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}
