@@ -17,9 +17,9 @@
 <section class="manual-grid">
   {% for section in manual_sections %}
   <article class="panel manual-section">
-    <h3>{{ section.title }}</h3>
+    <h3>{{ section["title"] }}</h3>
     <div class="manual-body">
-      {% for item in section.items %}
+      {% for item in section["items"] %}
         {% if item.type == "bullet" %}
         <p class="manual-bullet">{{ item.value }}</p>
         {% elif item.type == "ordered" %}
