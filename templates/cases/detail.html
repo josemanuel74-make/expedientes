@@ -155,16 +155,18 @@
           <td data-label="Fecha">{{ document.created_at }}</td>
           <td data-label="Acciones">
             <div class="row-actions">
-              <a href="{{ url_for('main.download_document', document_id=document.id) }}">Descargar</a>
               {% if document.signature_status == "signed" and document.signed_pdf_path %}
               <a href="{{ url_for('main.download_signed_document', document_id=document.id) }}">Descargar firmado</a>
-              {% elif current_user_can_sign(document) %}
+              <a href="{{ url_for('main.download_document', document_id=document.id) }}">DOCX origen</a>
+              <span class="muted">Protegido por firma</span>
+              {% else %}
+              <a href="{{ url_for('main.download_document', document_id=document.id) }}">Descargar DOCX</a>
+              {% if current_user_can_sign(document) %}
               <a href="{{ url_for('main.signature_sign_page', document_id=document.id) }}">Firmar PDF</a>
               {% endif %}
+              {% endif %}
               {% if g.user["role"] == "admin" %}
-              {% if document.signature_status == "signed" %}
-              <span class="muted">Bloqueado por firma</span>
-              {% else %}
+              {% if document.signature_status != "signed" %}
               <form
                 method="post"
                 action="{{ url_for('main.delete_document', document_id=document.id) }}"
