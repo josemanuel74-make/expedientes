@@ -967,6 +967,36 @@ textarea {
   gap: 0.4rem;
 }
 
+.history-disclosure {
+  margin-top: 0.45rem;
+}
+
+.history-disclosure summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.92rem;
+}
+
+.history-list {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.history-item {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(18, 59, 53, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.history-actions {
+  margin-top: 0.3rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
 .timeline {
   display: grid;
   gap: 14px;

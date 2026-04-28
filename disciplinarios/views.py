@@ -379,6 +379,21 @@ def get_case_documents(case_id: int):
     return [dict(row) for row in rows]
 
 
+def split_case_documents(documents: list[dict]) -> tuple[list[dict], dict[str, list[dict]]]:
+    latest_documents: list[dict] = []
+    history_by_group: dict[str, list[dict]] = {}
+
+    for document in documents:
+        group_key = document.get("doc_number") or document.get("template_name") or str(document.get("id"))
+        if group_key not in history_by_group:
+            latest_documents.append(document)
+            history_by_group[group_key] = []
+        else:
+            history_by_group[group_key].append(document)
+
+    return latest_documents, history_by_group
+
+
 def next_document_version(case_id: int, doc_number: str | None, template_name: str) -> int:
     db = get_db()
     if doc_number:
@@ -1338,13 +1353,15 @@ def case_detail(case_id: int):
         return redirect(url_for("main.cases"))
     backfill_signature_requests_for_case(case)
     documents = get_case_documents(case_id)
+    latest_documents, document_history = split_case_documents(documents)
     templates = template_candidates(Path(current_app.config["PROJECT_ROOT"]))
     template_items = template_options(case, templates)
     next_docs = next_available_doc_numbers(case)
     return render_template(
         "cases/detail.html",
         case=case,
-        documents=documents,
+        documents=latest_documents,
+        document_history=document_history,
         template_items=template_items,
         next_docs=next_docs,
         alerts=build_case_alerts(case),

@@ -123,6 +123,8 @@
       </thead>
       <tbody>
         {% for document in documents %}
+        {% set group_key = document.doc_number or document.template_name or document.id|string %}
+        {% set history_items = document_history.get(group_key, []) %}
         <tr>
           <td data-label="Plantilla">{{ document.template_name }}</td>
           <td data-label="Versión">
@@ -158,7 +160,6 @@
               {% if document.signature_status == "signed" and document.signed_pdf_path %}
               <a href="{{ url_for('main.download_signed_document', document_id=document.id) }}">Descargar firmado</a>
               <a href="{{ url_for('main.download_document', document_id=document.id) }}">DOCX origen</a>
-              <span class="muted">Protegido por firma</span>
               {% else %}
               <a href="{{ url_for('main.download_document', document_id=document.id) }}">Descargar DOCX</a>
               {% if current_user_can_sign(document) %}
@@ -179,6 +180,27 @@
                 <button class="link-button link-danger" type="submit">Borrar</button>
               </form>
               {% endif %}
+              {% endif %}
+              {% if history_items %}
+              <details class="history-disclosure">
+                <summary>Ver {{ history_items|length }} version{% if history_items|length != 1 %}es{% endif %} anterior{% if history_items|length != 1 %}es{% endif %}</summary>
+                <div class="history-list">
+                  {% for item in history_items %}
+                  <div class="history-item">
+                    <div>
+                      <strong>v{{ "%02d"|format(item.version_number or 1) }}</strong>
+                      <span class="muted"> · {{ item.created_at }}</span>
+                    </div>
+                    <div class="history-actions">
+                      {% if item.signature_status == "signed" and item.signed_pdf_path %}
+                      <a href="{{ url_for('main.download_signed_document', document_id=item.id) }}">PDF firmado</a>
+                      {% endif %}
+                      <a href="{{ url_for('main.download_document', document_id=item.id) }}">DOCX</a>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </details>
               {% endif %}
             </div>
           </td>
