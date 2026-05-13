@@ -230,6 +230,38 @@ def instructor_has_active_cases(email: str) -> bool:
     return bool(row and row["count"] > 0)
 
 
+def sync_instructor_cases(instructor: dict | None) -> int:
+    if not instructor:
+        return 0
+
+    normalized_email = normalize_email(instructor.get("email", ""))
+    normalized_name = (instructor.get("name") or "").strip()
+    raw_name = (instructor.get("raw_name") or "").strip()
+    if not normalized_email or not normalized_name:
+        return 0
+
+    db = get_db()
+    before = db.total_changes
+    db.execute(
+        """
+        UPDATE cases
+        SET instructor_name = ?,
+            instructor_email = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE (
+            lower(trim(coalesce(instructor_name, ''))) = lower(?)
+            OR lower(trim(coalesce(instructor_name, ''))) = lower(?)
+            OR lower(trim(coalesce(instructor_email, ''))) = lower(?)
+        )
+        """,
+        (normalized_name, normalized_email, normalized_name, raw_name, normalized_email),
+    )
+    changed = db.total_changes - before
+    if changed:
+        db.commit()
+    return changed
+
+
 def resolve_access_profile(email: str):
     db = get_db()
     normalized_email = normalize_email(email)
@@ -241,6 +273,9 @@ def resolve_access_profile(email: str):
     if admin:
         display_name = instructor["name"] if instructor else format_person_name(normalized_email.split("@", 1)[0].replace(".", " ")).title()
         return upsert_user(normalized_email, "admin", display_name.title())
+
+    if instructor:
+        sync_instructor_cases(instructor)
 
     if instructor and instructor["email"] and instructor_has_active_cases(instructor["email"]):
         return upsert_user(instructor["email"], "instructor", instructor["name"])
