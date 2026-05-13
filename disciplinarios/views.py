@@ -275,7 +275,7 @@ DOCUMENT_FLOW = {
 
 ROLE_ALLOWED_DOCS = {
     "admin": {f"{number:02d}" for number in range(1, 13)},
-    "instructor": {"03", "05", "06", "07", "08", "09"},
+    "instructor": {f"{number:02d}" for number in range(1, 10)},
 }
 
 AUDIT_ACTION_LABELS = {

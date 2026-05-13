@@ -26,14 +26,25 @@ Solo verás los expedientes en los que estás asignado como instructor.
 
 ## Documentos del instructor
 
-Ahora mismo el instructor trabaja con:
+Ahora mismo el instructor puede generar hasta el `09` incluido:
 
+- `01`
+- `02`
 - `03`
+- `04`
 - `05`
 - `06`
 - `07`
 - `08`
 - `09`
+
+Eso no significa que pueda firmarlos todos.
+
+## Firma de documentos
+
+- el instructor solo firma los documentos que le correspondan como firmante
+- si un documento lo firma Dirección, el instructor podrá generarlo pero no firmarlo
+- la firma depende del flujo configurado y del firmante asignado
 
 ## Flujo básico
 

@@ -39,6 +39,12 @@
 
 El admin puede generar cualquier documento, pero ese es el reparto operativo actual.
 
+## Firma de documentos
+
+- el admin puede firmar los documentos que correspondan a Dirección
+- la firma no depende de quién genera el documento
+- la firma depende de quién figura como firmante en el flujo y en la plantilla
+
 ## Crear un expediente
 
 1. Entra en `Expedientes`.
