@@ -55,6 +55,7 @@ SPECIAL_TEMPLATE_DOC_NUMBERS = {
     "00 - Informe del instructor.docx": "INF",
 }
 INSTRUCTOR_REPORT_DOC_NUMBER = "INF"
+FINAL_COORDINATION_EMAIL = "elisamaria.sanchez@educacion.gob.es"
 
 CASE_STATUSES = [
     ("iniciado", "01. Inicio de expediente"),
@@ -225,6 +226,20 @@ def send_instruction_completed_email(instructor_name: str, instructor_email: str
             f"La fase de instrucción del expediente {case_number} ha quedado finalizada.\n\n"
             "Antes de salir, revisa que toda tu parte esté completa y lista para dirección.\n\n"
             "Podrás seguir entrando con tu correo y tu código de acceso cuando lo necesites."
+        ),
+    )
+
+
+def send_final_coordination_email(case_row, student_row) -> None:
+    send_email_message(
+        FINAL_COORDINATION_EMAIL,
+        f"Expediente {case_row['case_number']} listo para cita con dirección",
+        (
+            "El instructor ha terminado y firmado el documento 09 del expediente disciplinario.\n\n"
+            f"Alumno: {student_row['full_name']}\n"
+            f"Grupo: {student_row['group_name']}\n"
+            f"Expediente: {case_row['case_number']}\n\n"
+            "Ya puede agendarse una cita con el director."
         ),
     )
 
@@ -1955,6 +1970,14 @@ def save_signature(document_id: int):
         (str(signed_path), document["id"]),
     )
     db.commit()
+    if doc_number == "09":
+        case = get_case(document["case_id"])
+        student = get_db().execute(
+            "SELECT * FROM students WHERE id = ?",
+            (case["student_id"],),
+        ).fetchone()
+        if student is not None:
+            send_final_coordination_email(case, student)
     log_action("sign", "document", document["case_id"], document["template_name"])
     return jsonify({"status": "success"})
 
