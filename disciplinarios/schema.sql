@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS signature_requests (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     sent_at TEXT,
     completed_at TEXT,
+    coordination_email_sent_at TEXT,
     last_error TEXT,
     FOREIGN KEY (generated_document_id) REFERENCES generated_documents(id) ON DELETE CASCADE,
     FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL

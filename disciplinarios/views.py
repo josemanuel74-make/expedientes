@@ -244,6 +244,23 @@ def send_final_coordination_email(case_row, student_row) -> None:
     )
 
 
+def send_final_coordination_email_for_document(document) -> None:
+    case = get_case(document["case_id"])
+    student = get_db().execute(
+        "SELECT * FROM students WHERE id = ?",
+        (case["student_id"],),
+    ).fetchone()
+    if student is None:
+        return
+    send_final_coordination_email(case, student)
+    get_db().execute(
+        "UPDATE signature_requests SET coordination_email_sent_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (document["id"],),
+    )
+    get_db().commit()
+    log_action("final_coordination_email", "document", document["case_id"], document["template_name"])
+
+
 STATUS_LABELS = dict(CASE_STATUSES)
 STATUS_LABELS.update(
     {
@@ -419,6 +436,7 @@ def get_case_documents(case_id: int):
                signature_requests.signed_pdf_path,
                signature_requests.sent_at,
                signature_requests.completed_at,
+               signature_requests.coordination_email_sent_at,
                signature_requests.last_error
         FROM generated_documents
         LEFT JOIN users ON users.id = generated_documents.created_by_user_id
@@ -912,7 +930,8 @@ def get_signature_request_for_document(document_id: int):
                signature_requests.status AS signature_status,
                generated_documents.case_id, generated_documents.template_name,
                generated_documents.doc_number, generated_documents.version_number,
-               generated_documents.is_latest, generated_documents.output_path
+               generated_documents.is_latest, generated_documents.output_path,
+               signature_requests.coordination_email_sent_at
         FROM signature_requests
         JOIN generated_documents ON generated_documents.id = signature_requests.generated_document_id
         WHERE generated_document_id = ?
@@ -1970,16 +1989,41 @@ def save_signature(document_id: int):
         (str(signed_path), document["id"]),
     )
     db.commit()
-    if doc_number == "09":
-        case = get_case(document["case_id"])
-        student = get_db().execute(
-            "SELECT * FROM students WHERE id = ?",
-            (case["student_id"],),
-        ).fetchone()
-        if student is not None:
-            send_final_coordination_email(case, student)
+    if doc_number == "09" and payload.get("send_final_email"):
+        send_final_coordination_email_for_document(document)
     log_action("sign", "document", document["case_id"], document["template_name"])
     return jsonify({"status": "success"})
+
+
+@main_bp.post("/documents/<int:document_id>/send-final-coordination-email")
+@login_required
+def send_final_coordination_email_route(document_id: int):
+    document = get_signature_request_for_document(document_id)
+    if document is None:
+        flash("No se ha encontrado el documento.", "error")
+        return redirect(url_for("main.dashboard"))
+
+    case = get_case(document["case_id"])
+    if not user_can_access_case(case):
+        flash("No tienes permiso para esta acción.", "error")
+        return redirect(url_for("main.cases"))
+
+    doc_number = document["doc_number"] or infer_doc_number_from_template_name(document["template_name"])
+    if doc_number != "09":
+        flash("Este aviso solo aplica al documento 09.", "error")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    if (document["signature_status"] or "") != "signed":
+        flash("El documento 09 debe estar firmado antes de avisar a oficina.", "error")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    if document["coordination_email_sent_at"]:
+        flash("Ese aviso ya fue enviado.", "info")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
+    send_final_coordination_email_for_document(document)
+    flash("Se ha avisado a Elisa María Sánchez para que pueda coordinar la cita con dirección.", "success")
+    return redirect(url_for("main.case_detail", case_id=document["case_id"]))
 
 
 @main_bp.get("/signatures/<int:document_id>/download")

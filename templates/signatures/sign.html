@@ -25,6 +25,12 @@
       <button class="button" id="sign-button" type="button">Firmar con AutoFirma</button>
       <a class="button button-secondary" href="{{ url_for('main.signature_preview', document_id=document.generated_document_id) }}" target="_blank" rel="noopener">Abrir PDF</a>
     </div>
+    {% if document.doc_number == "09" %}
+    <label class="checkbox">
+      <input type="checkbox" id="send-final-email" checked>
+      <span>Avisar a Elisa María Sánchez cuando este documento quede firmado para que pueda agendar la cita con dirección.</span>
+    </label>
+    {% endif %}
     <p class="muted" id="signature-feedback">La zona visible de firma saldrá del campo <code>&lt;&lt;firmaVisible&gt;&gt;</code> de la plantilla.</p>
     <p class="muted">Este paso requiere que AutoFirma esté instalado y disponible en el equipo desde el que firmas.</p>
   </article>
@@ -45,6 +51,7 @@
     const signButton = document.getElementById("sign-button");
     const feedback = document.getElementById("signature-feedback");
     const csrfToken = {{ csrf_token|tojson }};
+    const sendFinalEmailInput = document.getElementById("send-final-email");
     const prepareUrl = {{ url_for('main.prepare_signature', document_id=document.generated_document_id)|tojson }};
     const saveUrl = {{ url_for('main.save_signature', document_id=document.generated_document_id)|tojson }};
     const redirectUrl = {{ url_for('main.case_detail', case_id=case.id)|tojson }};
@@ -101,7 +108,10 @@
                   "Content-Type": "application/json",
                   "X-CSRF-Token": csrfToken,
                 },
-                body: JSON.stringify({ signed_b64: signedB64 }),
+                body: JSON.stringify({
+                  signed_b64: signedB64,
+                  send_final_email: !!(sendFinalEmailInput && sendFinalEmailInput.checked),
+                }),
               });
               const saveData = await saveResponse.json();
               if (!saveResponse.ok) {

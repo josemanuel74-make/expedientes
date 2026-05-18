@@ -166,6 +166,16 @@
               {% if document.signature_status == "signed" and document.signed_pdf_path %}
               <a href="{{ url_for('main.download_signed_document', document_id=document.id) }}">Descargar firmado</a>
               <a href="{{ url_for('main.download_document', document_id=document.id) }}">DOCX origen</a>
+              {% if document.doc_number == "09" %}
+                {% if document.coordination_email_sent_at %}
+                <span class="muted">Aviso enviado</span>
+                {% else %}
+                <form method="post" action="{{ url_for('main.send_final_coordination_email_route', document_id=document.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="link-button" type="submit">Avisar a oficina</button>
+                </form>
+                {% endif %}
+              {% endif %}
               {% else %}
               <a href="{{ url_for('main.download_document', document_id=document.id) }}">Descargar DOCX</a>
               {% if current_user_can_sign(document) %}

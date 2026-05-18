@@ -83,6 +83,8 @@ def migrate_db(db):
     signature_request_columns = _table_columns(db, "signature_requests")
     if "signed_pdf_path" not in signature_request_columns:
         db.execute("ALTER TABLE signature_requests ADD COLUMN signed_pdf_path TEXT")
+    if "coordination_email_sent_at" not in signature_request_columns:
+        db.execute("ALTER TABLE signature_requests ADD COLUMN coordination_email_sent_at TEXT")
 
     db.execute(
         """
