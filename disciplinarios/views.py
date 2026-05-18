@@ -26,7 +26,7 @@ from flask import (
 )
 import xlrd
 
-from .auth import ACTIVE_INSTRUCTOR_STATUSES, admin_required, instructor_has_active_cases, login_required, send_email_message
+from .auth import ACTIVE_INSTRUCTOR_STATUSES, admin_required, login_required, send_email_message
 from .db import get_db
 from .directory import find_instructor, format_person_name, load_instructors_from_excel, normalize_email
 from .documents import (
@@ -209,18 +209,9 @@ def send_instructor_assignment_email(instructor_name: str, instructor_email: str
     )
 
 
-def send_instruction_completed_email(instructor_name: str, instructor_email: str, case_number: str, still_has_active_cases: bool) -> None:
+def send_instruction_completed_email(instructor_name: str, instructor_email: str, case_number: str) -> None:
     if not instructor_email:
         return
-
-    if still_has_active_cases:
-        access_note = (
-            "Seguirás pudiendo entrar con tu correo y tu código de acceso porque todavía tienes otros expedientes en fase de instrucción."
-        )
-    else:
-        access_note = (
-            "A partir de este momento ya no podrás pedir nuevos códigos de acceso, porque no te queda ningún expediente en fase de instrucción."
-        )
 
     send_email_message(
         instructor_email,
@@ -228,7 +219,7 @@ def send_instruction_completed_email(instructor_name: str, instructor_email: str
         (
             f"La fase de instrucción del expediente {case_number} ha quedado finalizada.\n\n"
             "Antes de salir, revisa que toda tu parte esté completa y lista para dirección.\n\n"
-            f"{access_note}"
+            "Podrás seguir entrando con tu correo y tu código de acceso cuando lo necesites."
         ),
     )
 
@@ -1705,23 +1696,16 @@ def case_generate_document(case_id: int):
         refreshed_case = db.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
         instructor_email = normalize_email(refreshed_case["instructor_email"] or "")
         instructor_name = refreshed_case["instructor_name"] or ""
-        still_has_active_cases = instructor_has_active_cases(instructor_email) if instructor_email else False
         if instructor_email and instructor_phase_finished(refreshed_case["status"]):
             send_instruction_completed_email(
                 instructor_name,
                 instructor_email,
                 refreshed_case["case_number"],
-                still_has_active_cases,
             )
         flash(
             "Documento 09 generado. La fase de instrucción queda lista para pasar a dirección. Revisa que todo esté completo y avisa en oficina para que coordinen la cita con la familia y el director.",
             "warning",
         )
-        if instructor_email and not still_has_active_cases:
-            flash(
-                f"El instructor {instructor_name or instructor_email} ya no podrá volver a pedir códigos de acceso si no se le asigna otro expediente en fase de instrucción.",
-                "warning",
-            )
     log_action("generate", "document", case_id, template_name)
     flash("Documento generado.", "success")
     return redirect(url_for("main.case_detail", case_id=case_id))

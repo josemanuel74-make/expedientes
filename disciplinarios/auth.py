@@ -230,6 +230,21 @@ def instructor_has_active_cases(email: str) -> bool:
     return bool(row and row["count"] > 0)
 
 
+def instructor_has_cases(email: str) -> bool:
+    normalized_email = normalize_email(email)
+    if not normalized_email:
+        return False
+    row = get_db().execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM cases
+        WHERE instructor_email = ?
+        """,
+        (normalized_email,),
+    ).fetchone()
+    return bool(row and row["count"] > 0)
+
+
 def sync_instructor_cases(instructor: dict | None) -> int:
     if not instructor:
         return 0
@@ -277,7 +292,7 @@ def resolve_access_profile(email: str):
     if instructor:
         sync_instructor_cases(instructor)
 
-    if instructor and instructor["email"] and instructor_has_active_cases(instructor["email"]):
+    if instructor and instructor["email"] and instructor_has_cases(instructor["email"]):
         return upsert_user(instructor["email"], "instructor", instructor["name"])
     return None
 
