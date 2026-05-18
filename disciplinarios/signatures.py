@@ -15,7 +15,7 @@ class SignatureIntegrationError(RuntimeError):
     pass
 
 
-SIGNABLE_DOCS = {f"{number:02d}" for number in range(1, 13)}
+SIGNABLE_DOCS = {f"{number:02d}" for number in range(1, 13)} | {"INF"}
 DIRECTOR_SIGNED_DOCS = {"01", "02", "04", "10", "11", "12"}
 def document_requires_signature(doc_number: str | None) -> bool:
     return bool(doc_number and doc_number in SIGNABLE_DOCS)

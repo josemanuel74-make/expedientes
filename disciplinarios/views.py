@@ -51,6 +51,11 @@ from .signatures import (
 
 main_bp = Blueprint("main", __name__)
 
+SPECIAL_TEMPLATE_DOC_NUMBERS = {
+    "00 - Informe del instructor.docx": "INF",
+}
+INSTRUCTOR_REPORT_DOC_NUMBER = "INF"
+
 CASE_STATUSES = [
     ("iniciado", "01. Inicio de expediente"),
     ("notificado_inicio", "02. Notificación de inicio"),
@@ -112,7 +117,7 @@ DATETIME_FIELD_PATTERNS = {
     }
 }
 
-AUTO_MANAGED_DOCUMENT_FIELDS = {"firmaVisible"}
+AUTO_MANAGED_DOCUMENT_FIELDS = {"firmaVisible", "fechaInforme", "numeroExpediente"}
 
 
 def parse_manual_file(path: Path) -> tuple[str, list[dict]]:
@@ -265,8 +270,8 @@ DOCUMENT_FLOW = {
 }
 
 ROLE_ALLOWED_DOCS = {
-    "admin": {f"{number:02d}" for number in range(1, 13)},
-    "instructor": {f"{number:02d}" for number in range(1, 10)},
+    "admin": {f"{number:02d}" for number in range(1, 13)} | {INSTRUCTOR_REPORT_DOC_NUMBER},
+    "instructor": {f"{number:02d}" for number in range(1, 10)} | {INSTRUCTOR_REPORT_DOC_NUMBER},
 }
 
 AUDIT_ACTION_LABELS = {
@@ -560,6 +565,8 @@ def validate_document_fields(
 
 
 def infer_status_from_template_name(template_name: str) -> str | None:
+    if template_name in SPECIAL_TEMPLATE_DOC_NUMBERS:
+        return None
     match = re.match(r"^\s*(\d{2})\b", template_name)
     if not match:
         return None
@@ -567,6 +574,9 @@ def infer_status_from_template_name(template_name: str) -> str | None:
 
 
 def infer_doc_number_from_template_name(template_name: str) -> str | None:
+    special = SPECIAL_TEMPLATE_DOC_NUMBERS.get(template_name)
+    if special:
+        return special
     match = re.match(r"^\s*(\d{2})\b", template_name)
     if not match:
         return None
@@ -576,15 +586,31 @@ def infer_doc_number_from_template_name(template_name: str) -> str | None:
 def generated_doc_numbers(case_id: int) -> set[str]:
     db = get_db()
     rows = db.execute(
-        "SELECT template_name FROM generated_documents WHERE case_id = ?",
+        "SELECT doc_number, template_name FROM generated_documents WHERE case_id = ?",
         (case_id,),
     ).fetchall()
     numbers = set()
     for row in rows:
-        doc_number = infer_doc_number_from_template_name(row["template_name"])
+        doc_number = row["doc_number"] or infer_doc_number_from_template_name(row["template_name"])
         if doc_number:
             numbers.add(doc_number)
     return numbers
+
+
+def instructor_report_is_signed(case_id: int) -> bool:
+    row = get_db().execute(
+        """
+        SELECT signature_requests.status AS signature_status
+        FROM generated_documents
+        LEFT JOIN signature_requests ON signature_requests.generated_document_id = generated_documents.id
+        WHERE generated_documents.case_id = ?
+          AND generated_documents.doc_number = ?
+          AND generated_documents.is_latest = 1
+        LIMIT 1
+        """,
+        (case_id, INSTRUCTOR_REPORT_DOC_NUMBER),
+    ).fetchone()
+    return bool(row and (row["signature_status"] or "") == "signed")
 
 
 def completed_doc_numbers(case_id: int) -> set[str]:
@@ -852,6 +878,9 @@ def ensure_signature_request(case_row, document_row, requested_by_user_id: int |
 
 
 def current_user_can_sign(document_row: dict) -> bool:
+    doc_number = document_row.get("doc_number") or infer_doc_number_from_template_name(document_row.get("template_name") or "")
+    if doc_number == "09" and not instructor_report_is_signed(document_row["case_id"]):
+        return False
     return (
         bool(g.user)
         and bool(document_row.get("signature_request_id"))
@@ -1436,6 +1465,7 @@ def case_detail(case_id: int):
         signature_status_label=signature_status_label,
         signature_status_tone=signature_status_tone,
         status_labels=STATUS_LABELS,
+        instructor_report_signed=instructor_report_is_signed(case_id),
     )
 
 
@@ -1585,7 +1615,10 @@ def case_generate_document(case_id: int):
             form_values[day_field] = str(parsed.day)
             form_values[month_field] = MONTH_NAMES.get(parsed.month, "")
 
-    save_case_field_overrides(case_id, submitted_values)
+    save_case_field_overrides(
+        case_id,
+        {key: value for key, value in submitted_values.items() if key not in AUTO_MANAGED_DOCUMENT_FIELDS},
+    )
     if case_updates:
         set_clause = ", ".join(f"{field} = ?" for field in case_updates)
         values = list(case_updates.values()) + [case_id]
@@ -1789,6 +1822,11 @@ def signature_sign_page(document_id: int):
         flash("Ese documento ya está firmado.", "info")
         return redirect(url_for("main.case_detail", case_id=document["case_id"]))
 
+    doc_number = document["doc_number"] or infer_doc_number_from_template_name(document["template_name"])
+    if doc_number == "09" and not instructor_report_is_signed(document["case_id"]):
+        flash("No se puede firmar el documento 09 hasta que el informe del instructor esté generado y firmado.", "error")
+        return redirect(url_for("main.case_detail", case_id=document["case_id"]))
+
     return render_template(
         "signatures/sign.html",
         case=case,
@@ -1837,6 +1875,10 @@ def prepare_signature(document_id: int):
     if (document["signature_status"] or "") != "pending_signature":
         return jsonify({"error": "La firma ya no está pendiente."}), 409
 
+    doc_number = document["doc_number"] or infer_doc_number_from_template_name(document["template_name"])
+    if doc_number == "09" and not instructor_report_is_signed(document["case_id"]):
+        return jsonify({"error": "No se puede firmar el documento 09 hasta que el informe del instructor esté generado y firmado."}), 409
+
     try:
         pdf_path = build_unsigned_pdf(document, document)
         pdf_base64 = base64.b64encode(pdf_path.read_bytes()).decode("utf-8")
@@ -1878,6 +1920,10 @@ def save_signature(document_id: int):
 
     if (document["signature_status"] or "") == "signed":
         return jsonify({"error": "El documento ya está firmado."}), 409
+
+    doc_number = document["doc_number"] or infer_doc_number_from_template_name(document["template_name"])
+    if doc_number == "09" and not instructor_report_is_signed(document["case_id"]):
+        return jsonify({"error": "No se puede firmar el documento 09 hasta que el informe del instructor esté generado y firmado."}), 409
 
     payload = request.get_json(silent=True) or {}
     signed_b64 = payload.get("signed_b64", "")

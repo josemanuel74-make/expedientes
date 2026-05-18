@@ -43,6 +43,12 @@ FIELD_ALIASES = {
     "diaconsejoescolar": "diaConsejoEscolar",
     "mesconsejoescolar": "mesConsejoEscolar",
     "firmavisible": "firmaVisible",
+    "declaracionestestigos": "declaracionesTestigos",
+    "audienciaalumnofamilia": "audienciaAlumnoFamilia",
+    "antecedentesinstructor": "antecedentesInstructor",
+    "conclusioninstructor": "conclusionInstructor",
+    "fechainforme": "fechaInforme",
+    "numeroexpediente": "numeroExpediente",
 }
 
 BARE_RUN_ALLOWED_FIELDS = {
@@ -77,6 +83,12 @@ FIELD_LABELS = {
     "diaConsejoEscolar": "Día del Consejo Escolar",
     "mesConsejoEscolar": "Mes del Consejo Escolar",
     "firmaVisible": "Firma visible",
+    "declaracionesTestigos": "Declaraciones de testigos",
+    "audienciaAlumnoFamilia": "Audiencia del alumno y de la familia",
+    "antecedentesInstructor": "Antecedentes y observaciones del instructor",
+    "conclusionInstructor": "Conclusión del instructor",
+    "fechaInforme": "Fecha del informe",
+    "numeroExpediente": "Número de expediente",
 }
 
 FIELD_HELP_TEXTS = {
@@ -86,6 +98,10 @@ FIELD_HELP_TEXTS = {
     ),
     "lugarCita": "Indica el lugar exacto de la comparecencia. Ejemplo: Jefatura de Estudios.",
     "horasVisita": "Escribe solo la hora. Ejemplo: 13:30",
+    "declaracionesTestigos": "Recoge aquí las declaraciones de testigos, profesorado o personal que haya intervenido en los hechos.",
+    "audienciaAlumnoFamilia": "Describe la audiencia dada al alumno y, en su caso, a la familia o representantes legales.",
+    "antecedentesInstructor": "Incluye antecedentes disciplinarios, observaciones del instructor y cualquier actuación relevante realizada.",
+    "conclusionInstructor": "Resume la valoración final del instructor y deja constancia de que los hechos han quedado suficientemente esclarecidos.",
 }
 
 MONTH_NAMES = {
@@ -319,10 +335,13 @@ def build_document_data(case_row, student_row) -> dict[str, str]:
         board_day = str(int(board_day_num))
         board_month = MONTH_NAMES.get(int(board_month_num), "")
 
+    report_date = datetime.now().strftime("%d/%m/%Y")
+
     return {
         "nombreAlumno": student_row["full_name"],
         "cursoAlumno": student_row["course_name"],
         "grupoAlumno": student_row["group_name"],
+        "numeroExpediente": case_row["case_number"] or "",
         "nombrePadres": student_row["guardians_name"],
         "diaHechos": day,
         "mesHechos": board_month if False else month,
@@ -345,6 +364,11 @@ def build_document_data(case_row, student_row) -> dict[str, str]:
         "diasExpulsionCautelar": case_row["precautionary_days"] or "",
         "diaConsejoEscolar": board_day,
         "mesConsejoEscolar": board_month,
+        "declaracionesTestigos": "",
+        "audienciaAlumnoFamilia": "",
+        "antecedentesInstructor": "",
+        "conclusionInstructor": "",
+        "fechaInforme": report_date,
         "firmaVisible": "",
     }
 

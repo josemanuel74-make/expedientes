@@ -82,6 +82,12 @@
     <h3>Generar documento</h3>
     <span class="muted">Elige la plantilla y completa solo los campos necesarios</span>
   </div>
+  {% if not instructor_report_signed %}
+  <div class="inline-note inline-note-warning">
+    <strong>Informe del instructor pendiente:</strong>
+    <span>Debes generar y firmar <em>00 - Informe del instructor.docx</em> antes de poder firmar el documento 09.</span>
+  </div>
+  {% endif %}
   <div class="flow-hint">
     <strong>Siguientes documentos disponibles:</strong>
     {% if next_docs %}

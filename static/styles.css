@@ -806,6 +806,12 @@ textarea {
   border: 1px solid rgba(221, 215, 203, 0.8);
 }
 
+.inline-note-warning {
+  margin-bottom: 14px;
+  background: #fff6eb;
+  border-color: rgba(221, 107, 32, 0.24);
+}
+
 .flow-hint {
   display: grid;
   gap: 10px;

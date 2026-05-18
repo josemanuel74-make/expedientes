@@ -31,7 +31,7 @@
       </label>
     {% endfor %}
     {% for field in field_items %}
-      {% set is_long = field.name in ['hechos', 'hechosImputados', 'calificacionHechos', 'propuesta'] %}
+      {% set is_long = field.name in ['hechos', 'hechosImputados', 'calificacionHechos', 'propuesta', 'declaracionesTestigos', 'audienciaAlumnoFamilia', 'antecedentesInstructor', 'conclusionInstructor'] %}
       <label class="{% if is_long %}full-width{% endif %}">
         {{ field.label }}{% if field.required %} <span class="required-mark">*</span>{% endif %}
         {% if field.name == 'nombreInstructor' %}
