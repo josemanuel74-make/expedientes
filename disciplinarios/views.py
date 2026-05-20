@@ -4,6 +4,7 @@ import base64
 from datetime import date, datetime, timedelta
 import io
 from itertools import zip_longest
+import json
 from pathlib import Path
 import re
 import secrets
@@ -57,6 +58,8 @@ SPECIAL_TEMPLATE_DOC_NUMBERS = {
 INSTRUCTOR_REPORT_DOC_NUMBER = "INF"
 FINAL_COORDINATION_EMAIL = "elisamaria.sanchez@educacion.gob.es"
 TEAMS_AUTOMATION_EMAIL = "josemanuel.rodriguez@edumelilla.es"
+DIRECTION_REMINDER_EMAIL = "josemanuel.rodriguez@edumelilla.es"
+DIRECTION_APPOINTMENT_REMINDER_HOURS = 2
 
 CASE_STATUSES = [
     ("iniciado", "01. Inicio de expediente"),
@@ -119,7 +122,14 @@ DATETIME_FIELD_PATTERNS = {
     }
 }
 
-AUTO_MANAGED_DOCUMENT_FIELDS = {"firmaVisible", "fechaInforme", "numeroExpediente"}
+AUTO_MANAGED_DOCUMENT_FIELDS = {
+    "firmaVisible",
+    "fechaInforme",
+    "numeroExpediente",
+    "fechaCitaDireccion",
+    "horaCitaDireccion",
+    "fechaHoraCitaDireccion",
+}
 
 
 def parse_manual_file(path: Path) -> tuple[str, list[dict]]:
@@ -236,6 +246,38 @@ def send_case_folder_request_email(case_row, student_row) -> None:
     )
 
 
+def create_direction_appointment_token(case_id: int) -> str:
+    token = secrets.token_urlsafe(24)
+    payload = json.dumps({"type": "direction_appointment", "case_id": case_id}, ensure_ascii=False)
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO intermediate_store (id, payload, created_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, created_at = CURRENT_TIMESTAMP
+        """,
+        (token, payload),
+    )
+    db.commit()
+    return token
+
+
+def load_direction_appointment_token(token: str):
+    row = get_db().execute("SELECT payload FROM intermediate_store WHERE id = ?", (token,)).fetchone()
+    if row is None:
+        return None
+    try:
+        payload = json.loads(row["payload"])
+    except json.JSONDecodeError:
+        return None
+    if payload.get("type") != "direction_appointment":
+        return None
+    case_id = payload.get("case_id")
+    if not isinstance(case_id, int):
+        return None
+    return get_case(case_id)
+
+
 def send_instruction_completed_email(instructor_name: str, instructor_email: str, case_number: str) -> None:
     if not instructor_email:
         return
@@ -252,6 +294,11 @@ def send_instruction_completed_email(instructor_name: str, instructor_email: str
 
 
 def send_final_coordination_email(case_row, student_row) -> None:
+    token = create_direction_appointment_token(case_row["id"])
+    appointment_url = (
+        f"{current_app.config['APP_BASE_URL'].rstrip('/')}"
+        f"{url_for('main.direction_appointment', token=token)}"
+    )
     send_email_message(
         FINAL_COORDINATION_EMAIL,
         f"Expediente {case_row['case_number']} listo para cita con dirección",
@@ -260,7 +307,24 @@ def send_final_coordination_email(case_row, student_row) -> None:
             f"Alumno: {student_row['full_name']}\n"
             f"Grupo: {student_row['group_name']}\n"
             f"Expediente: {case_row['case_number']}\n\n"
-            "Ya puede agendarse una cita con el director."
+            "Ya puede agendarse una cita con el director.\n\n"
+            f"Para registrar la fecha y la hora de la cita, usa este enlace:\n{appointment_url}"
+        ),
+    )
+
+
+def send_direction_signature_reminder_email(case_row, appointment_dt: datetime) -> None:
+    recipient = current_app.config.get("SIGNATURE_ADMIN_EMAIL") or DIRECTION_REMINDER_EMAIL
+    send_email_message(
+        recipient,
+        f"Recordatorio: firmar documento 11 del expediente {case_row['case_number']}",
+        (
+            "Hay una cita con dirección registrada y el documento 11 sigue pendiente de firma.\n\n"
+            f"Alumno: {case_row['full_name']}\n"
+            f"Grupo: {case_row['group_name']}\n"
+            f"Expediente: {case_row['case_number']}\n"
+            f"Cita: {appointment_dt.strftime('%d/%m/%Y a las %H:%M')}\n\n"
+            "Conviene revisar y firmar el documento 11 antes de la cita."
         ),
     )
 
@@ -330,6 +394,77 @@ def maybe_send_instruction_deadline_reminders(cases_rows) -> None:
 
         send_instruction_deadline_reminder_email(case, days_remaining, deadline)
         log_action("instruction_deadline_reminder", "case", case["id"], reminder_key)
+
+
+def latest_document_is_signed(case_id: int, doc_number: str) -> bool:
+    row = get_db().execute(
+        """
+        SELECT signature_requests.status AS signature_status
+        FROM generated_documents
+        LEFT JOIN signature_requests ON signature_requests.generated_document_id = generated_documents.id
+        WHERE generated_documents.case_id = ?
+          AND generated_documents.doc_number = ?
+          AND generated_documents.is_latest = 1
+        LIMIT 1
+        """,
+        (case_id, doc_number),
+    ).fetchone()
+    return bool(row and (row["signature_status"] or "") == "signed")
+
+
+def maybe_send_direction_appointment_reminders(cases_rows) -> None:
+    now = datetime.now()
+    db = get_db()
+
+    for case in cases_rows:
+        appointment_raw = case["direction_appointment_at"] or ""
+        if not appointment_raw:
+            continue
+        if latest_document_is_signed(case["id"], "11"):
+            continue
+
+        appointment_dt = None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"):
+            try:
+                appointment_dt = datetime.strptime(appointment_raw, fmt)
+                break
+            except ValueError:
+                continue
+        if appointment_dt is None:
+            continue
+
+        reminder_at = appointment_dt - timedelta(hours=DIRECTION_APPOINTMENT_REMINDER_HOURS)
+        if not (reminder_at <= now < appointment_dt):
+            continue
+
+        reminder_key = f"direction_appointment_reminder:{appointment_dt.isoformat()}"
+        already_sent = db.execute(
+            """
+            SELECT 1
+            FROM audit_logs
+            WHERE entity_type = 'case'
+              AND entity_id = ?
+              AND action = 'direction_appointment_reminder'
+              AND details = ?
+            LIMIT 1
+            """,
+            (case["id"], reminder_key),
+        ).fetchone()
+        if already_sent:
+            continue
+
+        send_direction_signature_reminder_email(case, appointment_dt)
+        db.execute(
+            """
+            UPDATE cases
+            SET direction_appointment_reminder_sent_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (case["id"],),
+        )
+        db.commit()
+        log_action("direction_appointment_reminder", "case", case["id"], reminder_key)
 
 
 def send_final_coordination_email_for_document(document) -> None:
@@ -405,6 +540,9 @@ AUDIT_ACTION_LABELS = {
     "download_docx": "DOCX descargado",
     "download_signed_pdf": "PDF firmado descargado",
     "download_zip": "ZIP descargado",
+    "instruction_deadline_reminder": "Recordatorio de instrucción",
+    "direction_appointment_reminder": "Recordatorio de firma previa a cita",
+    "final_coordination_email": "Aviso a oficina",
 }
 
 
@@ -793,6 +931,17 @@ def parse_iso_date(raw_value: str | None) -> date | None:
         return None
 
 
+def parse_case_datetime(raw_value: str | None) -> datetime | None:
+    if not raw_value:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(raw_value, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def build_case_alerts(case) -> list[dict]:
     today = date.today()
     alerts: list[dict] = []
@@ -1113,6 +1262,7 @@ def dashboard():
                 cases.status,
                 cases.instructor_email,
                 cases.opening_date,
+                cases.direction_appointment_at,
                 students.full_name,
                 students.group_name
             FROM cases
@@ -1141,6 +1291,7 @@ def dashboard():
                 cases.status,
                 cases.instructor_email,
                 cases.opening_date,
+                cases.direction_appointment_at,
                 students.full_name,
                 students.group_name
             FROM cases
@@ -1152,6 +1303,7 @@ def dashboard():
             (current_user_email(),),
         ).fetchall()
     maybe_send_instruction_deadline_reminders(recent_cases)
+    maybe_send_direction_appointment_reminders(recent_cases)
     return render_template(
         "dashboard.html",
         counts=counts,
@@ -1356,6 +1508,7 @@ def cases():
         rows = db.execute(
             """
             SELECT cases.*, students.full_name
+                , students.group_name
             FROM cases
             JOIN students ON students.id = cases.student_id
             ORDER BY cases.created_at DESC
@@ -1365,6 +1518,7 @@ def cases():
         rows = db.execute(
             """
             SELECT cases.*, students.full_name
+                , students.group_name
             FROM cases
             JOIN students ON students.id = cases.student_id
             WHERE cases.instructor_email = ?
@@ -1373,6 +1527,7 @@ def cases():
             (current_user_email(),),
         ).fetchall()
     maybe_send_instruction_deadline_reminders(rows)
+    maybe_send_direction_appointment_reminders(rows)
     return render_template("cases/list.html", cases=rows, status_labels=STATUS_LABELS)
 
 
@@ -1592,9 +1747,11 @@ def case_detail(case_id: int):
     templates = template_candidates(Path(current_app.config["PROJECT_ROOT"]))
     template_items = template_options(case, templates)
     next_docs = next_available_doc_numbers(case)
+    appointment_dt = parse_case_datetime(case["direction_appointment_at"])
     return render_template(
         "cases/detail.html",
         case=case,
+        direction_appointment_display=appointment_dt.strftime("%d/%m/%Y · %H:%M") if appointment_dt else "",
         documents=latest_documents,
         document_history=document_history,
         template_items=template_items,
@@ -1608,7 +1765,74 @@ def case_detail(case_id: int):
         signature_status_tone=signature_status_tone,
         status_labels=STATUS_LABELS,
         instructor_report_signed=instructor_report_is_signed(case_id),
+        document_11_signed=latest_document_is_signed(case_id, "11"),
     )
+
+
+def save_direction_appointment(case_id: int, appointment_value: str, notes: str, set_by: str) -> None:
+    appointment_dt = parse_case_datetime(appointment_value)
+    normalized_value = appointment_dt.strftime("%Y-%m-%d %H:%M:%S") if appointment_dt else None
+    db = get_db()
+    db.execute(
+        """
+        UPDATE cases
+        SET direction_appointment_at = ?,
+            direction_appointment_notes = ?,
+            direction_appointment_set_by = ?,
+            direction_appointment_reminder_sent_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (normalized_value, notes.strip(), set_by.strip(), case_id),
+    )
+    db.commit()
+
+
+@main_bp.route("/appointment/<token>", methods=("GET", "POST"))
+def direction_appointment(token: str):
+    case = load_direction_appointment_token(token)
+    if case is None:
+        flash("El enlace de cita no es válido o ya no está disponible.", "error")
+        return redirect(url_for("auth.login"))
+
+    if request.method == "POST":
+        appointment_value = request.form.get("appointment_at", "").strip()
+        notes = request.form.get("appointment_notes", "").strip()
+        if not appointment_value:
+            flash("Indica la fecha y la hora de la cita.", "error")
+        else:
+            save_direction_appointment(case["id"], appointment_value, notes, "Elisa María Sánchez")
+            log_action("update", "case", case["id"], f"Cita con dirección registrada por enlace: {appointment_value}")
+            flash("La cita con dirección ha quedado registrada.", "success")
+            return redirect(url_for("main.direction_appointment", token=token))
+
+    appointment_dt = parse_case_datetime(case["direction_appointment_at"])
+    return render_template(
+        "appointments/edit.html",
+        case=case,
+        appointment_token=token,
+        appointment_value=appointment_dt.strftime("%Y-%m-%dT%H:%M") if appointment_dt else "",
+    )
+
+
+@main_bp.post("/cases/<int:case_id>/appointment")
+@admin_required
+def case_set_direction_appointment(case_id: int):
+    case = get_case(case_id)
+    if case is None:
+        flash("El expediente no existe.", "error")
+        return redirect(url_for("main.cases"))
+
+    appointment_value = request.form.get("appointment_at", "").strip()
+    notes = request.form.get("appointment_notes", "").strip()
+    if not appointment_value:
+        flash("Indica la fecha y la hora de la cita.", "error")
+        return redirect(url_for("main.case_detail", case_id=case_id))
+
+    save_direction_appointment(case_id, appointment_value, notes, g.user["display_name"] or g.user["email"])
+    log_action("update", "case", case_id, f"Cita con dirección registrada manualmente: {appointment_value}")
+    flash("La cita con dirección ha quedado guardada.", "success")
+    return redirect(url_for("main.case_detail", case_id=case_id))
 
 
 @main_bp.get("/cases/<int:case_id>/documents/new")

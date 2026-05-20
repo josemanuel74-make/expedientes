@@ -35,6 +35,9 @@ FIELD_ALIASES = {
     "mesvisita": "mesVisita",
     "lugarcita": "lugarCita",
     "fechahoracita": "fechaHoraCita",
+    "fechacitadireccion": "fechaCitaDireccion",
+    "horacitadireccion": "horaCitaDireccion",
+    "fechahoracitadireccion": "fechaHoraCitaDireccion",
     "hechosimputados": "hechosImputados",
     "calificacionhechos": "calificacionHechos",
     "propuesta": "propuesta",
@@ -75,6 +78,9 @@ FIELD_LABELS = {
     "mesVisita": "Mes de la vista",
     "lugarCita": "Lugar de citación",
     "fechaHoraCita": "Fecha y hora de la citación",
+    "fechaCitaDireccion": "Fecha de cita con dirección",
+    "horaCitaDireccion": "Hora de cita con dirección",
+    "fechaHoraCitaDireccion": "Fecha y hora de cita con dirección",
     "hechosImputados": "Hechos imputados",
     "calificacionHechos": "Calificación de los hechos",
     "propuesta": "Propuesta",
@@ -96,6 +102,7 @@ FIELD_HELP_TEXTS = {
         "Escribe la fecha y la hora tal como quieres que aparezcan en el documento. "
         "Ejemplo: 27/04/2026 a las 13:30"
     ),
+    "fechaHoraCitaDireccion": "Este dato se completa automáticamente con la cita que fije Elisa o que se guarde en el expediente.",
     "lugarCita": "Indica el lugar exacto de la comparecencia. Ejemplo: Jefatura de Estudios.",
     "horasVisita": "Escribe solo la hora. Ejemplo: 13:30",
     "declaracionesTestigos": "Recoge aquí las declaraciones de testigos, profesorado o personal que haya intervenido en los hechos.",
@@ -336,6 +343,20 @@ def build_document_data(case_row, student_row) -> dict[str, str]:
         board_month = MONTH_NAMES.get(int(board_month_num), "")
 
     report_date = datetime.now().strftime("%d/%m/%Y")
+    appointment_at = case_row["direction_appointment_at"] or ""
+    appointment_date = ""
+    appointment_time = ""
+    appointment_datetime = ""
+    if appointment_at:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"):
+            try:
+                appointment_dt = datetime.strptime(appointment_at, fmt)
+                appointment_date = appointment_dt.strftime("%d/%m/%Y")
+                appointment_time = appointment_dt.strftime("%H:%M")
+                appointment_datetime = f"{appointment_date} a las {appointment_time}"
+                break
+            except ValueError:
+                continue
 
     return {
         "nombreAlumno": student_row["full_name"],
@@ -357,6 +378,9 @@ def build_document_data(case_row, student_row) -> dict[str, str]:
         "mesVisita": "",
         "lugarCita": "",
         "fechaHoraCita": "",
+        "fechaCitaDireccion": appointment_date,
+        "horaCitaDireccion": appointment_time,
+        "fechaHoraCitaDireccion": appointment_datetime,
         "hechosImputados": case_row["facts_summary"] or "",
         "calificacionHechos": case_row["conduct_type"] or "",
         "propuesta": case_row["proposed_measure"] or "",

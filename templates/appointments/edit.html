@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Registrar cita · {{ case.case_number }}{% endblock %}
+{% block content %}
+<section class="panel appointment-panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow app-eyebrow">Cita con dirección</p>
+      <h2>{{ case.case_number }}</h2>
+      <p class="muted">{{ case.full_name }} · {{ case.group_name }}</p>
+    </div>
+  </div>
+
+  <p class="muted">Usa esta pantalla para registrar la fecha y la hora de la cita con dirección. Ese dato se reutilizará en el documento 11 y servirá para enviar el recordatorio de firma.</p>
+
+  <form method="post" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      <span>Fecha y hora de la cita</span>
+      <input type="datetime-local" name="appointment_at" value="{{ appointment_value }}" required>
+    </label>
+    <label>
+      <span>Observaciones</span>
+      <textarea name="appointment_notes" rows="5">{{ case.direction_appointment_notes or '' }}</textarea>
+    </label>
+    <button class="button" type="submit">Guardar cita</button>
+  </form>
+</section>
+{% endblock %}

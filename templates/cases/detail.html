@@ -50,6 +50,49 @@
   </article>
 </section>
 
+<section class="detail-grid">
+  <article class="panel">
+    <h3>Cita con dirección</h3>
+    {% if direction_appointment_display %}
+    <p><strong>{{ direction_appointment_display }}</strong></p>
+    {% else %}
+    <p class="muted">Todavía no hay cita registrada para la reunión con dirección.</p>
+    {% endif %}
+    {% if case.direction_appointment_notes %}
+    <p class="pre-wrap muted">{{ case.direction_appointment_notes }}</p>
+    {% endif %}
+    {% if case.direction_appointment_set_by %}
+    <p class="muted">Registrada por: {{ case.direction_appointment_set_by }}</p>
+    {% endif %}
+    {% if not document_11_signed %}
+    <p class="muted">Mientras el documento 11 no esté firmado, la app podrá recordarte que lo firmes antes de la cita.</p>
+    {% endif %}
+  </article>
+
+  {% if g.user["role"] == "admin" %}
+  <article class="panel">
+    <h3>Registrar cita</h3>
+    <form method="post" action="{{ url_for('main.case_set_direction_appointment', case_id=case.id) }}" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        <span>Fecha y hora</span>
+        <input
+          type="datetime-local"
+          name="appointment_at"
+          value="{{ case.direction_appointment_at and case.direction_appointment_at[:16]|replace(' ', 'T') or '' }}"
+          required
+        >
+      </label>
+      <label>
+        <span>Observaciones</span>
+        <textarea name="appointment_notes" rows="4">{{ case.direction_appointment_notes or '' }}</textarea>
+      </label>
+      <button class="button" type="submit">Guardar cita</button>
+    </form>
+  </article>
+  {% endif %}
+</section>
+
 {% if alerts %}
 <section class="panel">
   <h3>Avisos</h3>

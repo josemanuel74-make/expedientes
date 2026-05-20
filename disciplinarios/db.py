@@ -50,6 +50,14 @@ def migrate_db(db):
     case_columns = _table_columns(db, "cases")
     if "instructor_email" not in case_columns:
         db.execute("ALTER TABLE cases ADD COLUMN instructor_email TEXT")
+    if "direction_appointment_at" not in case_columns:
+        db.execute("ALTER TABLE cases ADD COLUMN direction_appointment_at TEXT")
+    if "direction_appointment_notes" not in case_columns:
+        db.execute("ALTER TABLE cases ADD COLUMN direction_appointment_notes TEXT")
+    if "direction_appointment_set_by" not in case_columns:
+        db.execute("ALTER TABLE cases ADD COLUMN direction_appointment_set_by TEXT")
+    if "direction_appointment_reminder_sent_at" not in case_columns:
+        db.execute("ALTER TABLE cases ADD COLUMN direction_appointment_reminder_sent_at TEXT")
 
     generated_document_columns = _table_columns(db, "generated_documents")
     if "doc_number" not in generated_document_columns:
