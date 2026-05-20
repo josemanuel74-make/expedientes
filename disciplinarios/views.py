@@ -56,6 +56,7 @@ SPECIAL_TEMPLATE_DOC_NUMBERS = {
 }
 INSTRUCTOR_REPORT_DOC_NUMBER = "INF"
 FINAL_COORDINATION_EMAIL = "elisamaria.sanchez@educacion.gob.es"
+TEAMS_AUTOMATION_EMAIL = "josemanuel.rodriguez@edumelilla.es"
 
 CASE_STATUSES = [
     ("iniciado", "01. Inicio de expediente"),
@@ -215,6 +216,26 @@ def send_instructor_assignment_email(instructor_name: str, instructor_email: str
     )
 
 
+def send_case_folder_request_email(case_row, student_row) -> None:
+    instructor_name = (case_row["instructor_name"] or "Sin instructor").strip()
+    subject = (
+        f"EXPEDIENTE_NUEVO|{case_row['case_number']}|"
+        f"{student_row['full_name']}|{student_row['group_name']}|{instructor_name}"
+    )
+    send_email_message(
+        TEAMS_AUTOMATION_EMAIL,
+        subject,
+        (
+            "Solicitud automática de creación de carpeta para Power Automate.\n\n"
+            f"EXPEDIENTE={case_row['case_number']}\n"
+            f"ALUMNO={student_row['full_name']}\n"
+            f"GRUPO={student_row['group_name']}\n"
+            f"INSTRUCTOR={instructor_name}\n"
+            f"CORREO_INSTRUCTOR={case_row['instructor_email'] or ''}\n"
+        ),
+    )
+
+
 def send_instruction_completed_email(instructor_name: str, instructor_email: str, case_number: str) -> None:
     if not instructor_email:
         return
@@ -244,6 +265,73 @@ def send_final_coordination_email(case_row, student_row) -> None:
     )
 
 
+def send_instruction_deadline_reminder_email(case_row, days_remaining: int, deadline: date) -> None:
+    instructor_email = normalize_email(case_row["instructor_email"] or "")
+    if not instructor_email:
+        return
+
+    if days_remaining < 0:
+        status_line = (
+            f"El plazo orientativo de instrucción de 7 días venció el {deadline.strftime('%d/%m/%Y')}."
+        )
+    else:
+        status_line = (
+            f"Quedan {days_remaining} día(s) para el plazo orientativo de instrucción. Fecha límite: {deadline.strftime('%d/%m/%Y')}."
+        )
+
+    send_email_message(
+        instructor_email,
+        f"Recordatorio de instrucción del expediente {case_row['case_number']}",
+        (
+            f"Tienes pendiente la instrucción del expediente {case_row['case_number']}.\n\n"
+            f"Alumno: {case_row['full_name']}\n"
+            f"Grupo: {case_row['group_name']}\n"
+            f"{status_line}\n\n"
+            "Recuerda que debes completar la instrucción, recoger las declaraciones necesarias y firmar la documentación que corresponda."
+        ),
+    )
+
+
+def maybe_send_instruction_deadline_reminders(cases_rows) -> None:
+    today = date.today()
+    db = get_db()
+
+    for case in cases_rows:
+        if case["status"] not in ACTIVE_INSTRUCTOR_STATUSES:
+            continue
+        instructor_email = normalize_email(case["instructor_email"] or "")
+        if not instructor_email:
+            continue
+        opening_date = parse_iso_date(case["opening_date"])
+        if not opening_date:
+            continue
+
+        deadline = opening_date + timedelta(days=7)
+        days_remaining = (deadline - today).days
+        if days_remaining > 2:
+            continue
+
+        reminder_kind = "overdue" if days_remaining < 0 else "warning"
+        reminder_key = f"instruction_deadline_reminder:{reminder_kind}:{today.isoformat()}"
+        already_sent = db.execute(
+            """
+            SELECT 1
+            FROM audit_logs
+            WHERE entity_type = 'case'
+              AND entity_id = ?
+              AND action = 'instruction_deadline_reminder'
+              AND details = ?
+            LIMIT 1
+            """,
+            (case["id"], reminder_key),
+        ).fetchone()
+        if already_sent:
+            continue
+
+        send_instruction_deadline_reminder_email(case, days_remaining, deadline)
+        log_action("instruction_deadline_reminder", "case", case["id"], reminder_key)
+
+
 def send_final_coordination_email_for_document(document) -> None:
     case = get_case(document["case_id"])
     student = get_db().execute(
@@ -265,11 +353,11 @@ STATUS_LABELS = dict(CASE_STATUSES)
 STATUS_LABELS.update(
     {
         "borrador": "01. Inicio de expediente",
-        "cerrado": "12. Notificación inspección",
+        "cerrado": "Cerrado",
     }
 )
 
-FINAL_CASE_STATUS = "notificado_inspeccion"
+FINAL_CASE_STATUS = "cerrado"
 
 TEMPLATE_STATUS_MAP = {
     "01": "iniciado",
@@ -1019,7 +1107,14 @@ def dashboard():
         }
         recent_cases = db.execute(
             """
-            SELECT cases.id, cases.case_number, cases.status, students.full_name
+            SELECT
+                cases.id,
+                cases.case_number,
+                cases.status,
+                cases.instructor_email,
+                cases.opening_date,
+                students.full_name,
+                students.group_name
             FROM cases
             JOIN students ON students.id = cases.student_id
             ORDER BY cases.created_at DESC
@@ -1040,7 +1135,14 @@ def dashboard():
         }
         recent_cases = db.execute(
             """
-            SELECT cases.id, cases.case_number, cases.status, students.full_name
+            SELECT
+                cases.id,
+                cases.case_number,
+                cases.status,
+                cases.instructor_email,
+                cases.opening_date,
+                students.full_name,
+                students.group_name
             FROM cases
             JOIN students ON students.id = cases.student_id
             WHERE cases.instructor_email = ?
@@ -1049,6 +1151,7 @@ def dashboard():
             """,
             (current_user_email(),),
         ).fetchall()
+    maybe_send_instruction_deadline_reminders(recent_cases)
     return render_template(
         "dashboard.html",
         counts=counts,
@@ -1269,6 +1372,7 @@ def cases():
             """,
             (current_user_email(),),
         ).fetchall()
+    maybe_send_instruction_deadline_reminders(rows)
     return render_template("cases/list.html", cases=rows, status_labels=STATUS_LABELS)
 
 
@@ -1323,8 +1427,12 @@ def case_create():
         )
         db.commit()
         case_id = db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+        case_row = db.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
+        student_row = db.execute("SELECT * FROM students WHERE id = ?", (request.form["student_id"],)).fetchone()
         if instructor_email:
             send_instructor_assignment_email(instructor_name, instructor_email, request.form["case_number"].strip())
+        if case_row is not None and student_row is not None:
+            send_case_folder_request_email(case_row, student_row)
         log_action("create", "case", case_id, "Alta de expediente")
         flash("Expediente creado.", "success")
         return redirect(url_for("main.cases"))
@@ -1988,6 +2096,15 @@ def save_signature(document_id: int):
         """,
         (str(signed_path), document["id"]),
     )
+    if doc_number == "12":
+        db.execute(
+            """
+            UPDATE cases
+            SET status = ?, closed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (FINAL_CASE_STATUS, document["case_id"]),
+        )
     db.commit()
     if doc_number == "09" and payload.get("send_final_email"):
         send_final_coordination_email_for_document(document)
