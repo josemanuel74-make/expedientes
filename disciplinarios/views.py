@@ -126,9 +126,6 @@ AUTO_MANAGED_DOCUMENT_FIELDS = {
     "firmaVisible",
     "fechaInforme",
     "numeroExpediente",
-    "fechaCitaDireccion",
-    "horaCitaDireccion",
-    "fechaHoraCitaDireccion",
 }
 
 
