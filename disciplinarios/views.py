@@ -1684,25 +1684,6 @@ def case_delete(case_id: int):
         flash("El expediente no existe.", "error")
         return redirect(url_for("main.cases"))
 
-    signed_document = db.execute(
-        """
-        SELECT generated_documents.template_name, generated_documents.version_number
-        FROM generated_documents
-        JOIN signature_requests ON signature_requests.generated_document_id = generated_documents.id
-        WHERE generated_documents.case_id = ?
-          AND signature_requests.status = 'signed'
-        LIMIT 1
-        """,
-        (case_id,),
-    ).fetchone()
-    if signed_document:
-        flash(
-            f"No se puede borrar el expediente porque contiene un documento firmado: "
-            f"{signed_document['template_name']} v{int(signed_document['version_number'] or 1):02d}.",
-            "error",
-        )
-        return redirect(url_for("main.case_detail", case_id=case_id))
-
     documents = db.execute(
         """
         SELECT generated_documents.output_path, signature_requests.pdf_path, signature_requests.signed_pdf_path

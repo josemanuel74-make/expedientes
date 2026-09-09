@@ -45,7 +45,7 @@
                 action="{{ url_for('main.case_delete', case_id=case.id) }}"
                 data-confirm="true"
                 data-confirm-title="¿Borrar expediente?"
-                data-confirm-message="Se eliminará el expediente {{ case.case_number }} y también sus documentos generados. Esta acción no se puede deshacer."
+                data-confirm-message="Se eliminará el expediente {{ case.case_number }} y también todos sus documentos generados, incluidos los PDF firmados si los hubiera. Esta acción no se puede deshacer."
                 data-confirm-submit="Borrar expediente"
               >
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
