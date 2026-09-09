@@ -569,6 +569,28 @@ a {
   flex-wrap: wrap;
 }
 
+.students-panel {
+  padding: 18px;
+}
+
+.students-toolbar {
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.students-toolbar input[type="search"] {
+  flex: 1 1 340px;
+  min-width: 220px;
+  height: 44px;
+}
+
+.students-toolbar .button {
+  flex: 0 0 auto;
+  min-width: 110px;
+  height: 44px;
+  padding: 0 18px;
+}
+
 .stats-grid {
   margin-bottom: 24px;
   flex-wrap: wrap;
@@ -1326,6 +1348,10 @@ textarea {
   .button-danger {
     width: 100%;
     text-align: center;
+  }
+
+  .students-toolbar .button {
+    width: 100%;
   }
 
   .summary-list {
