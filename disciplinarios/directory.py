@@ -15,6 +15,27 @@ XLSX_NS = {
     "p": "http://schemas.openxmlformats.org/package/2006/relationships",
 }
 
+FENICIA_EMAIL_OVERRIDES = {
+    "Núñez Caballero, Alberto": "alberto.caballero@edumelilla.es",
+    "García Bermejo, Carmen": "carmen.garcia@edumelilla.es",
+    "Méndez Úbeda, David": "david.mendez@edumelilla.es",
+    "Calzada Sarrión, Jesús": "jesus.calzada@edumelilla.es",
+    "Jiménez Torres, Joaquín": "joaquin.jimenez@edumelilla.es",
+    "Pérez Bernet, Marina": "marina.perez@edumelilla.es",
+    "Cherino Muñoz, María del Carmen": "maricarmen.cherino@edumelilla.es",
+    "Mohand Arraouah, Muad": "muad.mohand@edumelilla.es",
+    "López Lorente, Natalia Irene": "natalia.irene@edumelilla.es",
+    "Butieb Mohamed, Riduan": "riduan.butieb@edumelilla.es",
+    "Estrada González, Silvia": "silvia.estrada@edumelilla.es",
+    "Mohamed Mohamed, Yasin": "yasin.mohamed@edumelilla.es",
+}
+
+FENICIA_IGNORED_EMPTY_EMAIL_ROWS = {
+    "Ortiz Calbano, Elena",
+    "López Díaz, María Esperanza",
+    "Galeote Sierra, Mª Ángeles",
+}
+
 
 def clean_excel_text(value: str) -> str:
     return str(value or "").replace("\xa0", " ").strip()
@@ -124,11 +145,15 @@ def load_instructors_from_fenicia_xls(excel_path: Path) -> list[dict]:
         raw_name = clean_excel_text(sheet.cell_value(row_index, name_column))
         if not raw_name:
             continue
+        email = normalize_email(sheet.cell_value(row_index, email_column))
+        if not email and raw_name in FENICIA_IGNORED_EMPTY_EMAIL_ROWS:
+            continue
+        email = FENICIA_EMAIL_OVERRIDES.get(raw_name, email)
         display_name = format_person_name(raw_name)
         instructor = {
             "name": display_name,
             "raw_name": raw_name,
-            "email": normalize_email(sheet.cell_value(row_index, email_column)),
+            "email": email,
             "role": clean_excel_text(sheet.cell_value(row_index, role_column)) if role_column is not None else "",
             "idea_user": clean_excel_text(sheet.cell_value(row_index, idea_column)) if idea_column is not None else "",
         }
