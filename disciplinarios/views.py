@@ -1446,30 +1446,43 @@ def students():
         ).fetchall()
     else:
         rows = db.execute("SELECT * FROM students ORDER BY full_name").fetchall()
-    excel_path = Path(current_app.config["PROJECT_ROOT"]) / "RegAlum (1).xls"
-    return render_template("students/list.html", students=rows, query=query, excel_available=excel_path.exists())
+    return render_template("students/list.html", students=rows, query=query)
 
 
 @main_bp.post("/students/import")
 @admin_required
 def students_import():
-    excel_path = Path(current_app.config["PROJECT_ROOT"]) / "RegAlum (1).xls"
-    if not excel_path.exists():
-        flash("No se ha encontrado el fichero RegAlum (1).xls en la carpeta del proyecto.", "error")
+    uploaded_file = request.files.get("students_excel")
+    if not uploaded_file or not uploaded_file.filename:
+        flash("Selecciona un fichero Excel de alumnado antes de importar.", "error")
+        return redirect(url_for("main.students"))
+
+    source_name = Path(uploaded_file.filename).name
+    suffix = Path(source_name).suffix.lower()
+    if suffix != ".xls":
+        flash("El fichero debe ser el Excel de Fenicia en formato .xls.", "error")
         return redirect(url_for("main.students"))
 
     db = get_db()
+    temp_path = None
     try:
-        imported, updated, unchanged = import_students_from_excel(db, excel_path)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            uploaded_file.save(temp_file)
+            temp_path = Path(temp_file.name)
+
+        imported, updated, unchanged = import_students_from_excel(db, temp_path)
     except (IndexError, ValueError, xlrd.XLRDError) as exc:
         flash(f"No se ha podido importar el Excel de alumnado: {exc}", "error")
         return redirect(url_for("main.students"))
+    finally:
+        if temp_path and temp_path.exists():
+            temp_path.unlink()
 
     log_action(
         "import",
         "student",
         None,
-        f"Excel importado: {imported} nuevos, {updated} actualizados, {unchanged} sin cambios",
+        f"Excel importado ({source_name}): {imported} nuevos, {updated} actualizados, {unchanged} sin cambios",
     )
     flash(
         f"Importación completada. Nuevos: {imported}. Actualizados: {updated}. Sin cambios: {unchanged}.",

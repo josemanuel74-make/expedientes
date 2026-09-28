@@ -7,9 +7,13 @@
     <p class="muted">Solo se guardan datos mínimos y reutilizables para los expedientes.</p>
   </div>
   <div class="actions-inline">
-    <form method="post" action="{{ url_for('main.students_import') }}">
+    <form method="post" action="{{ url_for('main.students_import') }}" enctype="multipart/form-data" class="import-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="button button-secondary" type="submit" {% if not excel_available %}disabled{% endif %}>Importar Excel</button>
+      <label class="file-upload">
+        <span>Excel alumnado</span>
+        <input type="file" name="students_excel" accept=".xls" required>
+      </label>
+      <button class="button button-secondary" type="submit">Importar Excel</button>
     </form>
     <a class="button" href="{{ url_for('main.student_create') }}">Nuevo alumno</a>
   </div>

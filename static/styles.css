@@ -569,6 +569,32 @@ a {
   flex-wrap: wrap;
 }
 
+.import-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.file-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.file-upload span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.file-upload input[type="file"] {
+  width: min(280px, 100%);
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: #fff;
+}
+
 .students-panel {
   padding: 18px;
 }
@@ -1351,6 +1377,12 @@ textarea {
   }
 
   .students-toolbar .button {
+    width: 100%;
+  }
+
+  .import-form,
+  .file-upload,
+  .file-upload input[type="file"] {
     width: 100%;
   }
 
