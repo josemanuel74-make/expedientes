@@ -571,15 +571,16 @@ def infer_is_minor(raw_birth_date: str) -> int:
     return 1 if years < 18 else 0
 
 
-def import_students_from_excel(db, excel_path: Path) -> tuple[int, int]:
+def import_students_from_excel(db, excel_path: Path) -> tuple[int, int, int]:
     book = xlrd.open_workbook(str(excel_path))
     sheet = book.sheet_by_index(0)
     imported = 0
-    skipped = 0
+    updated = 0
+    unchanged = 0
 
     for row_index in range(5, sheet.nrows):
         values = [str(sheet.cell_value(row_index, column)).strip() for column in range(sheet.ncols)]
-        if not values[0]:
+        if not values[0] or len(values) <= 33:
             continue
 
         full_name = values[0]
@@ -590,15 +591,75 @@ def import_students_from_excel(db, excel_path: Path) -> tuple[int, int]:
         contact_email = values[24] or values[30] or values[13] or values[12]
         is_minor = infer_is_minor(values[7])
 
+        student_data = {
+            "full_name": full_name,
+            "course_name": course_name,
+            "group_name": group_name,
+            "guardians_name": guardians_name,
+            "contact_phone": contact_phone,
+            "contact_email": contact_email,
+            "is_minor": is_minor,
+        }
+
         existing = db.execute(
             """
-            SELECT id FROM students
+            SELECT * FROM students
             WHERE full_name = ? AND course_name = ? AND group_name = ?
             """,
             (full_name, course_name, group_name),
         ).fetchone()
         if existing:
-            skipped += 1
+            changed = any((existing[key] or "") != (value or "") for key, value in student_data.items())
+            if changed:
+                db.execute(
+                    """
+                    UPDATE students
+                    SET full_name = ?, course_name = ?, group_name = ?, guardians_name = ?,
+                        contact_phone = ?, contact_email = ?, is_minor = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (
+                        full_name,
+                        course_name,
+                        group_name,
+                        guardians_name,
+                        contact_phone,
+                        contact_email,
+                        is_minor,
+                        existing["id"],
+                    ),
+                )
+                updated += 1
+            else:
+                unchanged += 1
+            continue
+
+        same_name_rows = db.execute(
+            "SELECT * FROM students WHERE full_name = ?",
+            (full_name,),
+        ).fetchall()
+        if len(same_name_rows) == 1:
+            existing = same_name_rows[0]
+            db.execute(
+                """
+                UPDATE students
+                SET course_name = ?, group_name = ?, guardians_name = ?,
+                    contact_phone = ?, contact_email = ?, is_minor = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    course_name,
+                    group_name,
+                    guardians_name,
+                    contact_phone,
+                    contact_email,
+                    is_minor,
+                    existing["id"],
+                ),
+            )
+            updated += 1
             continue
 
         db.execute(
@@ -621,7 +682,7 @@ def import_students_from_excel(db, excel_path: Path) -> tuple[int, int]:
         imported += 1
 
     db.commit()
-    return imported, skipped
+    return imported, updated, unchanged
 
 
 def get_case(case_id: int):
@@ -1398,9 +1459,22 @@ def students_import():
         return redirect(url_for("main.students"))
 
     db = get_db()
-    imported, skipped = import_students_from_excel(db, excel_path)
-    log_action("import", "student", None, f"Excel importado: {imported} nuevos, {skipped} omitidos")
-    flash(f"Importación completada. Nuevos: {imported}. Omitidos por duplicado: {skipped}.", "success")
+    try:
+        imported, updated, unchanged = import_students_from_excel(db, excel_path)
+    except (IndexError, ValueError, xlrd.XLRDError) as exc:
+        flash(f"No se ha podido importar el Excel de alumnado: {exc}", "error")
+        return redirect(url_for("main.students"))
+
+    log_action(
+        "import",
+        "student",
+        None,
+        f"Excel importado: {imported} nuevos, {updated} actualizados, {unchanged} sin cambios",
+    )
+    flash(
+        f"Importación completada. Nuevos: {imported}. Actualizados: {updated}. Sin cambios: {unchanged}.",
+        "success",
+    )
     return redirect(url_for("main.students"))
 
 
