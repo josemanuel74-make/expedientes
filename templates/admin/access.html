@@ -8,6 +8,19 @@
 </header>
 
 <section class="panel">
+  <h3>Listado de profesores</h3>
+  <p class="muted">Sube el RelPerCen.xls de Fenicia para actualizar nombres, puestos, correos y usuarios IdEA. La app solo aceptará correos @edumelilla.es.</p>
+  <form method="post" action="{{ url_for('main.teachers_import') }}" enctype="multipart/form-data" class="import-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="file-upload">
+      <span>RelPerCen.xls</span>
+      <input type="file" name="teachers_excel" accept=".xls" required>
+    </label>
+    <button class="button button-secondary" type="submit">Actualizar profesores</button>
+  </form>
+</section>
+
+<section class="panel">
   <form method="post" action="{{ url_for('main.admin_access_add') }}" class="form-grid compact">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>

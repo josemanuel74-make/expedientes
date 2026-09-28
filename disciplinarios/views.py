@@ -29,7 +29,14 @@ import xlrd
 
 from .auth import ACTIVE_INSTRUCTOR_STATUSES, admin_required, login_required, send_email_message
 from .db import get_db
-from .directory import find_instructor, format_person_name, load_instructors_from_excel, normalize_email
+from .directory import (
+    find_instructor,
+    format_person_name,
+    load_instructors_from_excel,
+    load_instructors_from_fenicia_xls,
+    normalize_email,
+    teacher_directory_issues,
+)
 from .documents import (
     FIELD_HELP_TEXTS,
     FIELD_LABELS,
@@ -1427,6 +1434,57 @@ def admin_access_delete(email: str):
     db.execute("DELETE FROM allowed_admin_emails WHERE email = ?", (normalized,))
     db.commit()
     flash("Administrador eliminado.", "success")
+    return redirect(url_for("main.admin_access"))
+
+
+@main_bp.post("/admin/teachers/import")
+@admin_required
+def teachers_import():
+    uploaded_file = request.files.get("teachers_excel")
+    if not uploaded_file or not uploaded_file.filename:
+        flash("Selecciona el fichero RelPerCen.xls antes de actualizar el listado de profesores.", "error")
+        return redirect(url_for("main.admin_access"))
+
+    source_name = Path(uploaded_file.filename).name
+    suffix = Path(source_name).suffix.lower()
+    if suffix != ".xls":
+        flash("El listado de profesores debe ser el RelPerCen de Fenicia en formato .xls.", "error")
+        return redirect(url_for("main.admin_access"))
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            uploaded_file.save(temp_file)
+            temp_path = Path(temp_file.name)
+
+        instructors = load_instructors_from_fenicia_xls(temp_path)
+        issues = teacher_directory_issues(instructors)
+        if issues:
+            detail = "; ".join(issues[:20])
+            if len(issues) > 20:
+                detail += f"; y {len(issues) - 20} más"
+            flash(
+                f"No se ha actualizado el listado. Hay {len(issues)} correos que no son @edumelilla.es o están vacíos: {detail}",
+                "error",
+            )
+            return redirect(url_for("main.admin_access"))
+
+        target_path = Path(current_app.config["PROJECT_ROOT"]) / "RelPerCen.xls"
+        shutil.copy2(temp_path, target_path)
+    except (ValueError, xlrd.XLRDError) as exc:
+        flash(f"No se ha podido leer el listado de profesores: {exc}", "error")
+        return redirect(url_for("main.admin_access"))
+    finally:
+        if temp_path and temp_path.exists():
+            temp_path.unlink()
+
+    log_action(
+        "import",
+        "teacher",
+        None,
+        f"Listado de profesores actualizado ({source_name}): {len(instructors)} registros",
+    )
+    flash(f"Listado de profesores actualizado. Registros importados: {len(instructors)}.", "success")
     return redirect(url_for("main.admin_access"))
 
 

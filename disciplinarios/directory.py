@@ -6,6 +6,8 @@ import re
 from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
+import xlrd
+
 
 XLSX_NS = {
     "a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -28,6 +30,13 @@ def format_person_name(value: str) -> str:
         return cleaned
     last_name, first_name = [part.strip() for part in cleaned.split(",", 1)]
     return clean_excel_text(f"{first_name} {last_name}")
+
+
+def instructor_search_text(instructor: dict) -> str:
+    return clean_excel_text(
+        f"{instructor['name']} {instructor['raw_name']} {instructor['email']} "
+        f"{instructor['role']} {instructor['idea_user']}"
+    ).lower()
 
 
 @lru_cache(maxsize=4)
@@ -75,24 +84,77 @@ def load_instructors_from_excel_cached(excel_path: str, mtime: float) -> tuple[d
         if not raw_name or raw_name == "Empleado/a":
             continue
         display_name = format_person_name(raw_name)
-        instructors.append(
-            {
-                "name": display_name,
-                "raw_name": raw_name,
-                "email": email,
-                "role": role,
-                "idea_user": idea_user,
-                "search": clean_excel_text(
-                    f"{display_name} {raw_name} {email} {role} {idea_user}"
-                ).lower(),
-            }
-        )
+        instructor = {
+            "name": display_name,
+            "raw_name": raw_name,
+            "email": email,
+            "role": role,
+            "idea_user": idea_user,
+        }
+        instructor["search"] = instructor_search_text(instructor)
+        instructors.append(instructor)
 
     instructors.sort(key=lambda item: item["name"].lower())
     return tuple(instructors)
 
 
+def load_instructors_from_fenicia_xls(excel_path: Path) -> list[dict]:
+    book = xlrd.open_workbook(str(excel_path))
+    sheet = book.sheet_by_index(0)
+    header_row = None
+    headers: dict[str, int] = {}
+
+    for row_index in range(min(sheet.nrows, 12)):
+        row_values = [clean_excel_text(sheet.cell_value(row_index, column)) for column in range(sheet.ncols)]
+        if "Empleado/a" in row_values and "Correo electrónico" in row_values:
+            header_row = row_index
+            headers = {value: index for index, value in enumerate(row_values) if value}
+            break
+
+    if header_row is None:
+        raise ValueError("No se han encontrado las columnas Empleado/a y Correo electrónico.")
+
+    name_column = headers["Empleado/a"]
+    email_column = headers["Correo electrónico"]
+    role_column = headers.get("Puesto")
+    idea_column = headers.get("Usuario IdEA")
+
+    instructors: list[dict] = []
+    for row_index in range(header_row + 1, sheet.nrows):
+        raw_name = clean_excel_text(sheet.cell_value(row_index, name_column))
+        if not raw_name:
+            continue
+        display_name = format_person_name(raw_name)
+        instructor = {
+            "name": display_name,
+            "raw_name": raw_name,
+            "email": normalize_email(sheet.cell_value(row_index, email_column)),
+            "role": clean_excel_text(sheet.cell_value(row_index, role_column)) if role_column is not None else "",
+            "idea_user": clean_excel_text(sheet.cell_value(row_index, idea_column)) if idea_column is not None else "",
+        }
+        instructor["search"] = instructor_search_text(instructor)
+        instructors.append(instructor)
+
+    instructors.sort(key=lambda item: item["name"].lower())
+    return instructors
+
+
+def teacher_directory_issues(instructors: list[dict]) -> list[str]:
+    issues: list[str] = []
+    for instructor in instructors:
+        email = instructor["email"]
+        if not email:
+            issues.append(f"{instructor['raw_name']}: sin correo")
+        elif not email.endswith("@edumelilla.es"):
+            issues.append(f"{instructor['raw_name']}: {email}")
+    return issues
+
+
 def load_instructors_from_excel(project_root: Path) -> list[dict]:
+    fenicia_path = project_root / "RelPerCen.xls"
+    if fenicia_path.exists():
+        return load_instructors_from_fenicia_xls(fenicia_path)
+
     excel_path = project_root / "todosProfesores.xlsx"
     if not excel_path.exists():
         return []
