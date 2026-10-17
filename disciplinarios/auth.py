@@ -150,7 +150,7 @@ def verify_rate_limited(email: str, ip_address: str) -> bool:
     )
 
 
-def send_email_message(to_email: str, subject: str, text_body: str) -> None:
+def send_email_message(to_email: str, subject: str, text_body: str) -> bool:
     mail_host = current_app.config.get("MAIL_HOST", "").strip()
     mail_port = int(current_app.config.get("MAIL_PORT", 587))
     mail_username = current_app.config.get("MAIL_USERNAME", "").strip()
@@ -164,7 +164,7 @@ def send_email_message(to_email: str, subject: str, text_body: str) -> None:
         print("ASUNTO:", subject)
         print(text_body)
         print("======================\n")
-        return
+        return False
 
     message = EmailMessage()
     message["Subject"] = subject
@@ -179,6 +179,7 @@ def send_email_message(to_email: str, subject: str, text_body: str) -> None:
             if mail_username:
                 smtp.login(mail_username, mail_password)
             smtp.send_message(message)
+        return True
     except Exception as exc:
         print("\n=== ERROR SMTP, EMAIL SIMULADO ===")
         print("ERROR:", repr(exc))
@@ -186,6 +187,7 @@ def send_email_message(to_email: str, subject: str, text_body: str) -> None:
         print("ASUNTO:", subject)
         print(text_body)
         print("=================================\n")
+        return False
 
 
 def upsert_user(email: str, role: str, display_name: str):

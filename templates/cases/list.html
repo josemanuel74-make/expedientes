@@ -40,6 +40,13 @@
             <div class="row-actions">
               {% if g.user["role"] == "admin" %}
               <a href="{{ url_for('main.case_edit', case_id=case.id) }}">Editar</a>
+              <form method="post" action="{{ url_for('main.case_request_teams_folder', case_id=case.id) }}"
+                data-confirm="true" data-confirm-title="¿Crear carpeta en Teams?"
+                data-confirm-message="Se reenviará la solicitud del expediente {{ case.case_number }} al flujo de Teams con su destino actual. Comprueba antes que no exista ya la carpeta. Los documentos antiguos no se trasladarán."
+                data-confirm-submit="Enviar solicitud">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="link-button" type="submit">Crear carpeta en Teams</button>
+              </form>
               <form
                 method="post"
                 action="{{ url_for('main.case_delete', case_id=case.id) }}"

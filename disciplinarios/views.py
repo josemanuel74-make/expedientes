@@ -230,13 +230,13 @@ def send_instructor_assignment_email(instructor_name: str, instructor_email: str
     )
 
 
-def send_case_folder_request_email(case_row, student_row) -> None:
+def send_case_folder_request_email(case_row, student_row) -> bool:
     instructor_name = (case_row["instructor_name"] or "Sin instructor").strip()
     subject = (
         f"EXPEDIENTE_NUEVO|{case_row['case_number']}|"
         f"{student_row['full_name']}|{student_row['group_name']}|{instructor_name}"
     )
-    send_email_message(
+    return send_email_message(
         TEAMS_AUTOMATION_EMAIL,
         subject,
         (
@@ -1671,6 +1671,30 @@ def cases():
     maybe_send_instruction_deadline_reminders(rows)
     maybe_send_direction_appointment_reminders(rows)
     return render_template("cases/list.html", cases=rows, status_labels=STATUS_LABELS)
+
+
+@main_bp.post("/cases/<int:case_id>/teams-folder")
+@admin_required
+def case_request_teams_folder(case_id: int):
+    db = get_db()
+    case = db.execute("SELECT * FROM cases WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        flash("El expediente no existe.", "error")
+        return redirect(url_for("main.cases"))
+    student = db.execute("SELECT * FROM students WHERE id = ?", (case["student_id"],)).fetchone()
+    if student is None:
+        flash("No se ha encontrado el alumno del expediente.", "error")
+        return redirect(url_for("main.cases"))
+    if send_case_folder_request_email(case, student):
+        log_action("request_teams_folder", "case", case_id, "Solicitud reenviada a Power Automate")
+        flash(
+            f"Solicitud enviada para el expediente {case['case_number']}. "
+            "Comprueba la creación de la carpeta en Teams.",
+            "success",
+        )
+    else:
+        flash("No se ha podido enviar la solicitud a Teams. Revisa la configuración del correo e inténtalo de nuevo.", "error")
+    return redirect(url_for("main.cases"))
 
 
 @main_bp.route("/cases/new", methods=("GET", "POST"))
