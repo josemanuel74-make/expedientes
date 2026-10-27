@@ -1,9 +1,11 @@
 """Copy a case's latest documents from the VPS to an existing OneDrive/Teams folder."""
 
 import argparse
+import errno
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -47,6 +49,19 @@ sys.stdout.buffer.write(buffer.getvalue())
 """
 
 
+def file_digest(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        helper = os.environ.get('TEAMS_FILE_HASH_HELPER', '')
+        if exc.errno != errno.EDEADLK or not helper:
+            raise
+        result = subprocess.check_output([helper, str(path)], timeout=90).decode().strip()
+        if len(result) != 64 or any(c not in '0123456789abcdef' for c in result):
+            raise ValueError('Resultado de integridad no valido.')
+        return result
+
+
 def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool = False):
     teams_root = teams_root.expanduser().resolve(strict=True)
     folders = [p for p in teams_root.iterdir() if p.is_dir() and p.name.startswith(case_number + ' - ')]
@@ -70,7 +85,7 @@ def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool
             if target.is_symlink():
                 raise ValueError('El destino contiene un enlace simbolico.')
             if target.exists():
-                if hashlib.sha256(target.read_bytes()).hexdigest() != expected_hash:
+                if file_digest(target) != expected_hash:
                     raise ValueError('Ya existe un archivo diferente: ' + name)
                 unchanged += 1
             else:
@@ -80,9 +95,26 @@ def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool
             # Exclusive creation also prevents overwriting a file added during the copy.
             with target.open('xb') as stream:
                 stream.write(data)
-            if hashlib.sha256(target.read_bytes()).hexdigest() != expected_hash:
+            if file_digest(target) != expected_hash:
                 raise ValueError('La verificacion del archivo copiado ha fallado.')
     return len(pending), unchanged
+
+
+def download_bundle(case_number: str, identity: Path, host: str, port: int) -> bytes:
+    return remote_python(REMOTE_EXPORT, [case_number], identity, host, port)
+
+
+def remote_python(source: str, arguments: list[str], identity: Path, host: str, port: int) -> bytes:
+    command = '.venv/bin/python -c ' + shlex.quote(source)
+    command += ''.join(' ' + shlex.quote(value) for value in arguments)
+    result = subprocess.run(
+        ['/usr/bin/ssh', '-p', str(port), '-i', str(identity.expanduser()),
+         '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+         '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', host,
+         'cd /home/guardias/expedientes && ' + command],
+        stdout=subprocess.PIPE, check=True, timeout=120,
+    )
+    return result.stdout
 
 
 def main():
@@ -94,14 +126,8 @@ def main():
     parser.add_argument('--port', type=int, default=50113)
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
-    command = '.venv/bin/python -c ' + shlex.quote(REMOTE_EXPORT) + ' ' + shlex.quote(args.case_number)
-    result = subprocess.run(
-        ['ssh', '-p', str(args.port), '-i', str(args.identity.expanduser()),
-         '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', args.host,
-         'cd /home/guardias/expedientes && ' + command],
-        stdout=subprocess.PIPE, check=True, timeout=120,
-    )
-    copied, unchanged = synchronize(result.stdout, args.teams_root, args.case_number, args.dry_run)
+    bundle = download_bundle(args.case_number, args.identity, args.host, args.port)
+    copied, unchanged = synchronize(bundle, args.teams_root, args.case_number, args.dry_run)
     print(f'Expediente {args.case_number}: {copied} archivos ' +
           ('pendientes de copiar' if args.dry_run else 'copiados y verificados') +
           f', {unchanged} identicos. OneDrive debe completar la subida a Teams.')

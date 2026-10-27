@@ -1,12 +1,14 @@
 import hashlib
+import errno
 import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
-from tools.sync_teams import synchronize
+from tools.sync_teams import file_digest, synchronize
 
 
 class TeamsCopyTests(unittest.TestCase):
@@ -49,6 +51,19 @@ class TeamsCopyTests(unittest.TestCase):
         (self.root / '04 - Other').mkdir()
         with self.assertRaises(ValueError):
             synchronize(self.bundle, self.root, '04')
+
+    def test_cloud_placeholder_uses_coordinated_reader(self):
+        digest = hashlib.sha256(self.data).hexdigest()
+        with patch.object(Path, 'read_bytes', side_effect=OSError(errno.EDEADLK, 'Placeholder')), \
+             patch.dict('os.environ', {'TEAMS_FILE_HASH_HELPER': '/private/helper'}), \
+             patch('tools.sync_teams.subprocess.check_output', return_value=(digest + '\n').encode()) as read:
+            self.assertEqual(file_digest(self.folder / 'signed.pdf'), digest)
+            read.assert_called_once()
+
+    def test_unrelated_read_failure_is_not_hidden(self):
+        with patch.object(Path, 'read_bytes', side_effect=PermissionError('Denied')), \
+             self.assertRaises(PermissionError):
+            file_digest(self.folder / 'signed.pdf')
 
 
 if __name__ == '__main__':
