@@ -1025,6 +1025,21 @@ textarea {
   margin-top: 0.45rem;
 }
 
+.family-upload {
+  min-width: 0;
+  max-width: 360px;
+}
+
+.family-upload .stack-form {
+  display: grid;
+  gap: 12px;
+}
+
+.family-upload input[type="file"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .history-disclosure summary {
   cursor: pointer;
   color: var(--accent);

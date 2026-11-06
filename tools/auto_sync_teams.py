@@ -23,14 +23,22 @@ timestamp = db.execute('SELECT CURRENT_TIMESTAMP').fetchone()[0]
 if sys.argv[2]:
     cases = db.execute("SELECT id, case_number, closed_at FROM cases WHERE status='cerrado' AND case_number=?", (sys.argv[2],)).fetchall()
 else:
-    cases = db.execute("SELECT id, case_number, closed_at FROM cases WHERE status='cerrado' AND datetime(closed_at)>=datetime(?) ORDER BY closed_at, id", (sys.argv[1],)).fetchall()
+    cases = db.execute('''SELECT id, case_number, closed_at FROM cases
+        WHERE status='cerrado' AND (datetime(closed_at)>=datetime(?) OR EXISTS (
+            SELECT 1 FROM family_signed_documents f
+            JOIN generated_documents d ON d.id=f.generated_document_id
+            WHERE d.case_id=cases.id AND datetime(f.created_at)>=datetime(?)
+        )) ORDER BY closed_at, id''', (sys.argv[1], sys.argv[1])).fetchall()
 result = []
 for case in cases:
     documents = db.execute('''SELECT d.id, d.output_path, d.version_number,
         s.status, s.signed_pdf_path, s.completed_at
         FROM generated_documents d LEFT JOIN signature_requests s ON s.generated_document_id=d.id
         WHERE d.case_id=? AND d.is_latest=1 ORDER BY d.id''', (case['id'],)).fetchall()
-    snapshot = [dict(case), [dict(d) for d in documents]]
+    family = db.execute('''SELECT f.id, f.output_path, f.sha256, f.created_at
+        FROM family_signed_documents f JOIN generated_documents d ON d.id=f.generated_document_id
+        WHERE d.case_id=? ORDER BY f.id''', (case['id'],)).fetchall()
+    snapshot = [dict(case), [dict(d) for d in documents], [dict(f) for f in family]]
     fingerprint = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     result.append({'number': case['case_number'], 'fingerprint': fingerprint})
 print(json.dumps({'timestamp': timestamp, 'cases': result}))

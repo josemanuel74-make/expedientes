@@ -143,3 +143,17 @@ CREATE TABLE IF NOT EXISTS intermediate_store (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     payload TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS family_signed_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    generated_document_id INTEGER NOT NULL,
+    output_path TEXT NOT NULL UNIQUE,
+    sha256 TEXT NOT NULL,
+    uploaded_by_user_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (generated_document_id) REFERENCES generated_documents(id) ON DELETE CASCADE,
+    FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_family_signed_document
+    ON family_signed_documents (generated_document_id, id);

@@ -25,6 +25,9 @@ rows = db.execute('''SELECT d.output_path, s.signed_pdf_path
     FROM generated_documents d
     LEFT JOIN signature_requests s ON s.generated_document_id = d.id
     WHERE d.case_id = ? AND d.is_latest = 1 ORDER BY d.id''', (case['id'],)).fetchall()
+rows += db.execute('''SELECT f.output_path, NULL AS signed_pdf_path
+    FROM family_signed_documents f JOIN generated_documents d ON d.id=f.generated_document_id
+    WHERE d.case_id=? ORDER BY f.id''', (case['id'],)).fetchall()
 files = {}
 for row in rows:
     for key in ('output_path', 'signed_pdf_path'):

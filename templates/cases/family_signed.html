@@ -1,0 +1,17 @@
+<details class="history-disclosure family-upload">
+  {% set uploads = family_documents.get(document.id, []) %}
+  <summary>Firma de la familia{% if uploads %} · PDF aportado{% endif %}</summary>
+  <div class="history-list">
+    {% for upload in uploads %}
+    <a href="{{ url_for('main.download_family_signed_document', upload_id=upload.id) }}">Descargar PDF familia · {{ upload.created_at }}</a>
+    {% endfor %}
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('main.upload_family_signed_document', document_id=document.id) }}" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        <span>PDF firmado por la familia (máx. 8 MB)</span>
+        <input type="file" name="family_signed_pdf" accept=".pdf,application/pdf" required>
+      </label>
+      <button class="button button-secondary" type="submit">Subir PDF de la familia</button>
+    </form>
+  </div>
+</details>

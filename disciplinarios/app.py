@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import timedelta
 import secrets
 
-from flask import Flask, jsonify, request, session
+from flask import Flask, flash, jsonify, redirect, request, session, url_for
 
 from .auth import auth_bp
 from .db import init_app
@@ -85,6 +85,8 @@ def create_app() -> Flask:
 
     @app.before_request
     def protect_against_csrf():
+        if request.endpoint == "main.upload_family_signed_document":
+            request.max_content_length = 9 * 1024 * 1024
         if request.method in {"GET", "HEAD", "OPTIONS"}:
             return None
         if request.endpoint in {"static", "main.autofirma_bridge"}:
@@ -97,6 +99,13 @@ def create_app() -> Flask:
                 return jsonify({"error": "CSRF token inválido."}), 403
             return ("CSRF token inválido.", 403)
         return None
+
+    @app.errorhandler(413)
+    def upload_too_large(error):
+        if request.endpoint == "main.upload_family_signed_document":
+            flash("El PDF de la familia no puede superar los 8 MB.", "error")
+            return redirect(url_for("main.cases"))
+        return error
 
     @app.after_request
     def apply_security_headers(response):

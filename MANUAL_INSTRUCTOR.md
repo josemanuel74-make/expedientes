@@ -71,6 +71,19 @@ La app reutiliza automáticamente los datos ya introducidos cuando puede.
 3. Completa la firma con AutoFirma.
 4. Comprueba que pase a estado `Firmado`.
 
+## PDF firmado por la familia
+
+1. En `Documentos generados`, localiza el documento `07 - Vista y Audiencia`.
+2. Abre `Firma de la familia`.
+3. Selecciona el PDF escaneado con las firmas de la familia y el alumno (máximo 8 MB).
+4. Pulsa `Subir PDF de la familia`.
+
+El PDF queda vinculado a esa versión del documento y puede descargarse desde
+el mismo apartado. No sustituye el DOCX ni la firma digital del instructor.
+Las copias anteriores se conservan si se aporta otro PDF. Los PDF de la
+familia se incluyen en el ZIP y en la sincronización con Teams al cerrar el
+expediente; una aportación posterior al cierre también se recoge.
+
 ## Versiones
 
 - Si un documento se vuelve a generar, la app crea una nueva versión.

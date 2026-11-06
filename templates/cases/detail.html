@@ -206,6 +206,9 @@
           <td data-label="Fecha">{{ document.created_at }}</td>
           <td data-label="Acciones">
             <div class="row-actions">
+              {% if document.doc_number == "07" %}
+              {% include "cases/family_signed.html" %}
+              {% endif %}
               {% if document.signature_status == "signed" and document.signed_pdf_path %}
               <a href="{{ url_for('main.download_signed_document', document_id=document.id) }}">Descargar firmado</a>
               <a href="{{ url_for('main.download_document', document_id=document.id) }}">DOCX origen</a>
@@ -255,6 +258,9 @@
                       <a href="{{ url_for('main.download_signed_document', document_id=item.id) }}">PDF firmado</a>
                       {% endif %}
                       <a href="{{ url_for('main.download_document', document_id=item.id) }}">DOCX</a>
+                      {% for upload in family_documents.get(item.id, []) %}
+                      <a href="{{ url_for('main.download_family_signed_document', upload_id=upload.id) }}">PDF familia · {{ upload.created_at }}</a>
+                      {% endfor %}
                     </div>
                   </div>
                   {% endfor %}

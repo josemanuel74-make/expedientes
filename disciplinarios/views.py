@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from datetime import date, datetime, timedelta
 import io
 from itertools import zip_longest
@@ -14,6 +15,7 @@ import zipfile
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     g,
@@ -547,6 +549,8 @@ AUDIT_ACTION_LABELS = {
     "instruction_deadline_reminder": "Recordatorio de instrucción",
     "direction_appointment_reminder": "Recordatorio de firma previa a cita",
     "final_coordination_email": "Aviso a oficina",
+    "upload_family_signed_pdf": "PDF de la familia aportado",
+    "download_family_signed_pdf": "PDF de la familia descargado",
 }
 
 
@@ -738,6 +742,22 @@ def get_case_documents(case_id: int):
         (case_id,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_family_signed_documents(case_id: int) -> dict[int, list[dict]]:
+    rows = get_db().execute(
+        """
+        SELECT family_signed_documents.*
+        FROM family_signed_documents
+        JOIN generated_documents ON generated_documents.id = family_signed_documents.generated_document_id
+        WHERE generated_documents.case_id = ?
+        ORDER BY family_signed_documents.id DESC
+        """, (case_id,),
+    ).fetchall()
+    grouped: dict[int, list[dict]] = {}
+    for row in rows:
+        grouped.setdefault(row["generated_document_id"], []).append(dict(row))
+    return grouped
 
 
 def split_case_documents(documents: list[dict]) -> tuple[list[dict], dict[str, list[dict]]]:
@@ -1876,6 +1896,7 @@ def case_detail(case_id: int):
         case=case,
         direction_appointment_display=appointment_dt.strftime("%d/%m/%Y · %H:%M") if appointment_dt else "",
         documents=latest_documents,
+        family_documents=get_family_signed_documents(case_id),
         document_history=document_history,
         template_items=template_items,
         next_docs=next_docs,
@@ -2264,6 +2285,11 @@ def export_case_zip(case_id: int):
                 signed_path = Path(document["signed_pdf_path"])
                 if signed_path.exists():
                     archive.write(signed_path, arcname=signed_path.name)
+        for uploads in get_family_signed_documents(case_id).values():
+            for upload in uploads:
+                path = Path(upload["output_path"])
+                if path.exists():
+                    archive.write(path, arcname=path.name)
 
     buffer.seek(0)
     zip_name = f"expediente-{safe_filename(case['case_number'])}.zip"
@@ -2459,6 +2485,75 @@ def save_signature(document_id: int):
     return jsonify({"status": "success"})
 
 
+@main_bp.post("/documents/<int:document_id>/family-signed")
+@login_required
+def upload_family_signed_document(document_id: int):
+    db = get_db()
+    document = db.execute("SELECT * FROM generated_documents WHERE id = ?", (document_id,)).fetchone()
+    if document is None:
+        abort(404)
+    case = get_case(document["case_id"])
+    if not user_can_access_case(case):
+        abort(403)
+    if document["doc_number"] != "07" or not document["is_latest"]:
+        abort(400)
+    uploaded = request.files.get("family_signed_pdf")
+    if not uploaded or not uploaded.filename or Path(uploaded.filename).suffix.lower() != ".pdf":
+        flash("Selecciona el documento firmado por la familia en formato PDF.", "error")
+        return redirect(url_for("main.case_detail", case_id=case["id"]))
+    data = uploaded.stream.read(8 * 1024 * 1024 + 1)
+    if len(data) > 8 * 1024 * 1024:
+        flash("El PDF de la familia no puede superar los 8 MB.", "error")
+        return redirect(url_for("main.case_detail", case_id=case["id"]))
+    if not data.startswith(b"%PDF-") or b"%%EOF" not in data[-4096:]:
+        flash("El archivo no tiene un formato PDF válido.", "error")
+        return redirect(url_for("main.case_detail", case_id=case["id"]))
+    folder = Path(current_app.config["GENERATED_DOCS_DIR"]) / f"case-{case['id']}" / "family_signed"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"07 - Vista y Audiencia - firmado-familia - v{document['version_number']:02d} - {secrets.token_hex(8)}.pdf"
+    path = folder / name
+    created = False
+    try:
+        with path.open("xb") as stream:
+            created = True
+            stream.write(data)
+        db.execute(
+            """INSERT INTO family_signed_documents
+               (generated_document_id, output_path, sha256, uploaded_by_user_id)
+               VALUES (?, ?, ?, ?)""",
+            (document_id, str(path), hashlib.sha256(data).hexdigest(), g.user["id"]),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        if created:
+            path.unlink(missing_ok=True)
+        raise
+    log_action("upload_family_signed_pdf", "document", case["id"], f"Vista y audiencia v{document['version_number']:02d}")
+    flash("PDF firmado por la familia guardado en el expediente.", "success")
+    return redirect(url_for("main.case_detail", case_id=case["id"]))
+
+
+@main_bp.get("/family-signed/<int:upload_id>/download")
+@login_required
+def download_family_signed_document(upload_id: int):
+    upload = get_db().execute(
+        """SELECT family_signed_documents.*, generated_documents.case_id
+           FROM family_signed_documents
+           JOIN generated_documents ON generated_documents.id = family_signed_documents.generated_document_id
+           WHERE family_signed_documents.id = ?""", (upload_id,),
+    ).fetchone()
+    if upload is None:
+        abort(404)
+    if not user_can_access_case(get_case(upload["case_id"])):
+        abort(403)
+    path = Path(upload["output_path"])
+    if not path.is_file():
+        abort(404)
+    log_action("download_family_signed_pdf", "document", upload["case_id"], "Vista y audiencia: PDF de la familia")
+    return send_file(path, as_attachment=True, mimetype="application/pdf")
+
+
 @main_bp.post("/documents/<int:document_id>/send-final-coordination-email")
 @login_required
 def send_final_coordination_email_route(document_id: int):
@@ -2562,6 +2657,10 @@ def delete_document(document_id: int):
     ).fetchone()
     if signature_row and signature_row["status"] == "signed":
         flash("No se puede borrar un documento ya firmado. Si necesitas cambios, genera una nueva versión.", "error")
+        return redirect(url_for("main.case_detail", case_id=row["case_id"]))
+
+    if db.execute("SELECT 1 FROM family_signed_documents WHERE generated_document_id = ?", (document_id,)).fetchone():
+        flash("No se puede borrar un documento con un PDF aportado por la familia.", "error")
         return redirect(url_for("main.case_detail", case_id=row["case_id"]))
 
     for key in ("output_path", "pdf_path", "signed_pdf_path"):
