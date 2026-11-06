@@ -12,6 +12,15 @@
       {% endif %}
     </p>
   </div>
+  {% if g.user["role"] == "admin" %}
+  <div class="header-actions">
+    {% if manual_role == "admin" %}
+    <a href="{{ url_for('main.manual', role='instructor') }}">Ver manual del instructor</a>
+    {% else %}
+    <a href="{{ url_for('main.manual') }}">Ver manual de administración</a>
+    {% endif %}
+  </div>
+  {% endif %}
 </header>
 
 <section class="manual-grid">

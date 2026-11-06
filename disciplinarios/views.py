@@ -1401,6 +1401,8 @@ def dashboard():
 @login_required
 def manual():
     role = "admin" if current_user_is_admin() else "instructor"
+    if current_user_is_admin() and request.args.get("role") == "instructor":
+        role = "instructor"
     title, sections = load_manual_for_role(role)
     return render_template("manual.html", manual_title=title, manual_sections=sections, manual_role=role)
 
