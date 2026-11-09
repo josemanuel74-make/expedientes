@@ -1,13 +1,15 @@
-"""One-shot worker, run by launchd, for closed cases awaiting their Teams copy."""
+"""One-shot worker, run by launchd, for document changes awaiting their Teams copy."""
 
 import argparse
 from datetime import datetime, timezone
 import fcntl
 import json
+import io
 import os
 from pathlib import Path
 import tempfile
 import subprocess
+import zipfile
 
 try:
     from .sync_teams import download_bundle, remote_python, synchronize
@@ -15,20 +17,29 @@ except ImportError:
     from sync_teams import download_bundle, remote_python, synchronize
 
 
-REMOTE_CLOSED_CASES = r"""
+REMOTE_CASES = r"""
 import hashlib, json, sqlite3, sys
+from pathlib import Path
+root = Path('/home/guardias/expedientes/generated_docs').resolve()
 db = sqlite3.connect('file:/home/guardias/expedientes/instance/disciplinarios.sqlite3?mode=ro', uri=True)
 db.row_factory = sqlite3.Row
 timestamp = db.execute('SELECT CURRENT_TIMESTAMP').fetchone()[0]
 if sys.argv[2]:
-    cases = db.execute("SELECT id, case_number, closed_at FROM cases WHERE status='cerrado' AND case_number=?", (sys.argv[2],)).fetchall()
+    cases = db.execute("SELECT id, case_number, closed_at FROM cases WHERE case_number=?", (sys.argv[2],)).fetchall()
 else:
     cases = db.execute('''SELECT id, case_number, closed_at FROM cases
-        WHERE status='cerrado' AND (datetime(closed_at)>=datetime(?) OR EXISTS (
-            SELECT 1 FROM family_signed_documents f
-            JOIN generated_documents d ON d.id=f.generated_document_id
-            WHERE d.case_id=cases.id AND datetime(f.created_at)>=datetime(?)
-        )) ORDER BY closed_at, id''', (sys.argv[1], sys.argv[1])).fetchall()
+        WHERE EXISTS (SELECT 1 FROM generated_documents d WHERE d.case_id=cases.id)
+        ORDER BY id''').fetchall()
+def file_hash(value):
+    if not value:
+        return None
+    path = Path(value).resolve()
+    if not path.is_relative_to(root):
+        raise RuntimeError('Ruta fuera del almacenamiento de documentos')
+    if not path.is_file():
+        return 'missing'
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
 result = []
 for case in cases:
     documents = db.execute('''SELECT d.id, d.output_path, d.version_number,
@@ -38,7 +49,9 @@ for case in cases:
     family = db.execute('''SELECT f.id, f.output_path, f.sha256, f.created_at
         FROM family_signed_documents f JOIN generated_documents d ON d.id=f.generated_document_id
         WHERE d.case_id=? ORDER BY f.id''', (case['id'],)).fetchall()
-    snapshot = [dict(case), [dict(d) for d in documents], [dict(f) for f in family]]
+    hashes = [(d['id'], file_hash(d['output_path']), file_hash(d['signed_pdf_path'])) for d in documents]
+    hashes += [('family', f['id'], file_hash(f['output_path'])) for f in family]
+    snapshot = [dict(case), [dict(d) for d in documents], [dict(f) for f in family], hashes]
     fingerprint = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     result.append({'number': case['case_number'], 'fingerprint': fingerprint})
 print(json.dumps({'timestamp': timestamp, 'cases': result}))
@@ -66,7 +79,10 @@ def process_cases(state, cases, fetch, copy, persist):
         if state['completed'].get(number, {}).get('fingerprint') == case['fingerprint']:
             continue
         try:
-            copied, unchanged = copy(fetch(number), number)
+            bundle = fetch(number)
+            copied, unchanged = copy(bundle, number)
+            with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+                files = json.loads(archive.read('manifest.json'))['files']
         except Exception as exc:
             failures += 1
             detail = type(exc).__name__ if isinstance(exc, subprocess.SubprocessError) else str(exc)
@@ -77,9 +93,10 @@ def process_cases(state, cases, fetch, copy, persist):
                 'fingerprint': case['fingerprint'],
                 'copied_to_onedrive_at': datetime.now(timezone.utc).isoformat(),
                 'copied': copied, 'unchanged': unchanged,
+                'files': files,
             }
             state['errors'].pop(number, None)
-            print(f'Expediente {number}: {copied} archivos copiados, {unchanged} identicos; verificados. OneDrive completa la subida.', flush=True)
+            print(f'Expediente {number}: {copied} archivos copiados o actualizados, {unchanged} identicos; verificados. OneDrive completa la subida.', flush=True)
         persist(state)
     return failures
 
@@ -100,25 +117,28 @@ def run(args):
         if state is None and not args.initialize:
             raise ValueError('Inicializa el estado antes de activar la tarea.')
         response = json.loads(remote_python(
-            REMOTE_CLOSED_CASES, [state['since'] if state else '9999-01-01', args.case_number or ''],
+            REMOTE_CASES, [state['since'] if state else '9999-01-01', args.case_number or ''],
             args.identity, args.host, args.port,
         ))
         if args.initialize:
             state = {'since': response['timestamp'], 'completed': {}, 'errors': {}}
             save_state(state_path, state)
-            print('Activado para cierres desde ' + state['since'] + ' UTC.', flush=True)
+            print('Seguimiento de documentos activado: ' + state['since'] + ' UTC.', flush=True)
             return 0
         if args.case_number and not response['cases']:
-            raise ValueError('El expediente solicitado no existe o no esta cerrado.')
+            raise ValueError('El expediente solicitado no existe.')
         failures = process_cases(
             state, response['cases'],
             lambda number: download_bundle(number, args.identity, args.host, args.port),
-            lambda bundle, number: synchronize(bundle, args.teams_root, number),
+            lambda bundle, number: synchronize(
+                bundle, args.teams_root, number,
+                known_files=state['completed'].get(number, {}).get('files', {}),
+            ),
             lambda value: save_state(state_path, value),
         )
         state['last_scan_at'] = response['timestamp']
         save_state(state_path, state)
-        print(f"Revision {response['timestamp']} UTC: {len(response['cases'])} cierres, {failures} pendientes.", flush=True)
+        print(f"Revision {response['timestamp']} UTC: {len(response['cases'])} expedientes revisados, {failures} pendientes.", flush=True)
         return 1 if failures else 0
 
 

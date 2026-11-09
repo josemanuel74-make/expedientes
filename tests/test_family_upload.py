@@ -12,7 +12,7 @@ from werkzeug.test import EnvironBuilder
 
 from disciplinarios.app import create_app
 from disciplinarios.db import close_db
-from tools.auto_sync_teams import REMOTE_CLOSED_CASES
+from tools.auto_sync_teams import REMOTE_CASES
 from tools.sync_teams import REMOTE_EXPORT
 
 
@@ -166,7 +166,7 @@ class FamilyUploadTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
             manifest = json.loads(archive.read('manifest.json'))
             self.assertIn(Path(row['output_path']).name, manifest['files'])
-        source = REMOTE_CLOSED_CASES.replace('/home/guardias/expedientes', str(self.root))
+        source = REMOTE_CASES.replace('/home/guardias/expedientes', str(self.root))
         output = subprocess.check_output([sys.executable, '-c', source, '2026-11-01 00:00:00', ''])
         self.assertEqual([c['number'] for c in json.loads(output)['cases']], ['TEST-01'])
 
@@ -217,7 +217,7 @@ class FamilyUploadTests(unittest.TestCase):
         bundle = subprocess.check_output([sys.executable, '-c', source, 'TEST-01'])
         with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
             self.assertEqual(archive.read('documents/' + name), PDF)
-        source = REMOTE_CLOSED_CASES.replace('/home/guardias/expedientes', str(self.root))
+        source = REMOTE_CASES.replace('/home/guardias/expedientes', str(self.root))
         output = subprocess.check_output([sys.executable, '-c', source, '2026-11-01 00:00:00', ''])
         self.assertEqual([c['number'] for c in json.loads(output)['cases']], ['TEST-01'])
 

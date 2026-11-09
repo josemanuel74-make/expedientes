@@ -19,12 +19,16 @@ class TeamsCopyTests(unittest.TestCase):
         self.folder = self.root / '03 - Test'
         self.folder.mkdir()
         self.data = b'%PDF-test'
+        self.bundle = self.make_bundle(self.data)
+
+    @staticmethod
+    def make_bundle(data):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w') as archive:
             archive.writestr('manifest.json', json.dumps({'case_number': '03', 'files': {
-                'signed.pdf': hashlib.sha256(self.data).hexdigest()}}))
-            archive.writestr('documents/signed.pdf', self.data)
-        self.bundle = buffer.getvalue()
+                'signed.pdf': hashlib.sha256(data).hexdigest()}}))
+            archive.writestr('documents/signed.pdf', data)
+        return buffer.getvalue()
 
     def test_copy_is_verified_and_repeat_is_unchanged(self):
         self.assertEqual(synchronize(self.bundle, self.root, '03'), (1, 0))
@@ -41,6 +45,51 @@ class TeamsCopyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             synchronize(self.bundle, self.root, '03')
         self.assertEqual(target.read_bytes(), b'existing')
+
+    def test_managed_file_is_updated_when_source_changes(self):
+        synchronize(self.bundle, self.root, '03')
+        known = {'signed.pdf': hashlib.sha256(self.data).hexdigest()}
+        newer = self.make_bundle(b'%PDF-updated')
+        self.assertEqual(synchronize(newer, self.root, '03', known_files=known), (1, 0))
+        self.assertEqual((self.folder / 'signed.pdf').read_bytes(), b'%PDF-updated')
+        self.assertEqual([path.name for path in self.folder.iterdir()], ['signed.pdf'])
+
+    def test_manual_edit_is_not_overwritten_by_managed_update(self):
+        synchronize(self.bundle, self.root, '03')
+        known = {'signed.pdf': hashlib.sha256(self.data).hexdigest()}
+        target = self.folder / 'signed.pdf'
+        target.write_bytes(b'manually-edited')
+        with self.assertRaises(ValueError):
+            synchronize(self.make_bundle(b'%PDF-updated'), self.root, '03', known_files=known)
+        self.assertEqual(target.read_bytes(), b'manually-edited')
+
+    def test_managed_dry_run_does_not_replace(self):
+        synchronize(self.bundle, self.root, '03')
+        known = {'signed.pdf': hashlib.sha256(self.data).hexdigest()}
+        self.assertEqual(synchronize(self.make_bundle(b'%PDF-updated'), self.root, '03', True, known), (1, 0))
+        self.assertEqual((self.folder / 'signed.pdf').read_bytes(), self.data)
+
+    def test_retry_recognizes_an_update_already_written(self):
+        synchronize(self.bundle, self.root, '03')
+        older = {'signed.pdf': hashlib.sha256(b'previous-copy').hexdigest()}
+        self.assertEqual(synchronize(self.bundle, self.root, '03', known_files=older), (0, 1))
+
+    def test_edit_during_update_is_preserved_and_temporary_file_removed(self):
+        synchronize(self.bundle, self.root, '03')
+        known = {'signed.pdf': hashlib.sha256(self.data).hexdigest()}
+        target = self.folder / 'signed.pdf'
+        reads = 0
+        def digest(path):
+            nonlocal reads
+            if path.resolve() == target.resolve():
+                reads += 1
+                if reads == 2:
+                    target.write_bytes(b'edited-during-copy')
+            return file_digest(path)
+        with patch('tools.sync_teams.file_digest', side_effect=digest), self.assertRaises(ValueError):
+            synchronize(self.make_bundle(b'%PDF-updated'), self.root, '03', known_files=known)
+        self.assertEqual(target.read_bytes(), b'edited-during-copy')
+        self.assertEqual([path.name for path in self.folder.iterdir()], ['signed.pdf'])
 
     def test_ambiguous_folder_is_rejected(self):
         (self.root / '03 - Other').mkdir()

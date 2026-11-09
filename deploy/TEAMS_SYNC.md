@@ -3,23 +3,29 @@
 ## Funcionamiento automatico
 
 La tarea de macOS `es.edumelilla.expedientes-teams-sync` revisa el VPS cada
-5 minutos y al iniciar sesion. Detecta expedientes con estado `cerrado` y
-fecha de cierre posterior a su activacion. En la app, ese cierre se produce
-al firmar el documento 12. Copia las ultimas versiones de los DOCX y los
-PDF firmados a la carpeta ya creada del expediente para el curso configurado.
+5 minutos y al iniciar sesion. Revisa los expedientes abiertos y cerrados que
+tengan documentos, sin limitarse por fecha de cierre. Compara los registros
+y las huellas SHA-256 del contenido, por lo que tambien detecta un cambio
+en un archivo con el mismo nombre y sin una nueva fecha en la base de datos.
+Copia las ultimas versiones de los DOCX y los PDF firmados a la carpeta ya
+creada del expediente para el curso configurado.
 Tambien incluye los PDF del 07 (Vista y Audiencia) y del 11 (Notificacion
-a familias) aportados con la firma de la familia. Si se suben despues del cierre, la fecha de aportacion los vuelve
-a incluir en la revision y su huella provoca una nueva copia.
+a familias) aportados con la firma de la familia. Su huella provoca una
+nueva copia, aunque el expediente estuviera cerrado antes de activar la tarea.
 
 OneDrive completa la subida a Teams. El Mac debe estar encendido, con la
-sesion iniciada y OneDrive conectado. Si esta apagado o sin red, el cierre
+sesion iniciada y OneDrive conectado. Si esta apagado o sin red, el cambio
 queda pendiente y se recoge en una revision posterior. No depende de tener
 abierta la app web o Codex. El VPS se consulta en modo solo lectura.
 
 Los fallos de conexion, carpetas todavia no disponibles o conflictos de
 archivos se reintentan en las siguientes revisiones y quedan registrados.
-Un conflicto con un archivo diferente requiere revision manual; no se
-sobrescribe automaticamente. La copia no borra archivos ni cambia permisos.
+Se guarda la huella de cada archivo copiado. Si el origen cambia y el destino
+conserva la huella de la ultima copia gestionada, el destino se actualiza
+mediante un archivo temporal verificado y una sustitucion atomica. Si el
+destino se modifico manualmente, o no hay una huella previa que permita
+identificarlo, el conflicto requiere revision manual y no se sobrescribe.
+La copia no borra archivos de otras versiones ni cambia permisos.
 
 Instalacion desde la raiz del proyecto (macOS):
 
@@ -32,7 +38,7 @@ python3 tools/install_teams_sync.py \
 El instalador conserva el estado si ya existia. El estado, fechas de revision
 y errores estan en `~/Library/Application Support/ExpedientesTeamsSync/`:
 
-- `state.json`: inicio de seguimiento, huellas copiadas y errores por expediente.
+- `state.json`: fecha de activacion informativa, huellas de documentos y archivos copiados, y errores por expediente.
 - `worker.log`: revisiones y copias verificadas en la carpeta de OneDrive.
 - `worker-error.log`: errores de ejecucion o conexion.
 
@@ -73,8 +79,9 @@ Quitar `--dry-run` para copiar. Debe existir una unica carpeta con el prefijo
 `03 - ` dentro de la carpeta indicada. No se crean carpetas nuevas.
 
 La copia verifica SHA-256 de todos los archivos. Si ya existe un archivo
-identico, no vuelve a copiarlo. Si existe uno diferente con el mismo nombre,
-se detiene antes de copiar y requiere revisar el conflicto. No borra archivos
+identico, no vuelve a copiarlo. El comando manual no usa el estado de la tarea:
+si existe uno diferente con el mismo nombre, se detiene antes de copiar y
+requiere revisar el conflicto. No borra archivos
 ni modifica permisos. No copia versiones anteriores ni PDF sin firmar.
 
 OneDrive realiza la subida a SharePoint/Teams despues de la copia local;

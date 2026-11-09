@@ -145,9 +145,11 @@ Cada vez que generas de nuevo una plantilla, se crea otra versión. La versión 
 
 Descargar firmado obtiene el PDF con la firma digital. DOCX origen obtiene la copia editable. Exportar ZIP descarga las últimas versiones de los documentos generados, sus PDF firmados disponibles y los PDF aportados por la familia.
 
-La app marca el expediente como cerrado al firmarse el documento 12. La tarea configurada en el Mac de Dirección revisa cada cinco minutos los cierres y copia los documentos a la carpeta ya creada en Teams, a través de OneDrive.
+La app marca el expediente como cerrado al firmarse el documento 12. La sincronización no depende del cierre: la tarea configurada en el Mac de Dirección revisa cada cinco minutos los documentos de los expedientes abiertos y cerrados, y copia las novedades a su carpeta ya creada en Teams, a través de OneDrive.
 
-El Mac debe estar encendido, con la sesión iniciada y OneDrive conectado. Si no lo está, la copia queda para una revisión posterior. Un PDF de la familia aportado después del cierre también se recoge. La subida no tiene por qué ser inmediata.
+Se recogen nuevas versiones, firmas y PDF aportados por la familia, también después del cierre. Las copias gestionadas por la tarea se actualizan si cambia su contenido; si un archivo se ha modificado manualmente en Teams, se conserva y se registra el conflicto para su revisión. Las versiones anteriores con otro nombre no se borran.
+
+El Mac debe estar encendido, con la sesión iniciada y OneDrive conectado. Si no lo está, la copia queda para una revisión posterior. La subida no tiene por qué ser inmediata.
 
 Si faltan archivos en Teams, comunícalo a Dirección o administración; no hace falta volver a generar los documentos.
 

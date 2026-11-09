@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shlex
 import subprocess
+import tempfile
 import zipfile
 
 
@@ -57,7 +58,7 @@ def file_digest(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as exc:
         helper = os.environ.get('TEAMS_FILE_HASH_HELPER', '')
-        if exc.errno != errno.EDEADLK or not helper:
+        if exc.errno not in {errno.EDEADLK, errno.ETIMEDOUT, errno.EAGAIN} or not helper:
             raise
         result = subprocess.check_output([helper, str(path)], timeout=90).decode().strip()
         if len(result) != 64 or any(c not in '0123456789abcdef' for c in result):
@@ -65,7 +66,8 @@ def file_digest(path: Path) -> str:
         return result
 
 
-def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool = False):
+def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool = False,
+                known_files: dict[str, str] | None = None):
     teams_root = teams_root.expanduser().resolve(strict=True)
     folders = [p for p in teams_root.iterdir() if p.is_dir() and p.name.startswith(case_number + ' - ')]
     if len(folders) != 1 or folders[0].is_symlink():
@@ -73,6 +75,7 @@ def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool
     destination = folders[0]
     pending = []
     unchanged = 0
+    known_files = known_files or {}
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         manifest = json.loads(archive.read('manifest.json'))
         if manifest['case_number'] != case_number or not manifest['files']:
@@ -88,16 +91,44 @@ def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool
             if target.is_symlink():
                 raise ValueError('El destino contiene un enlace simbolico.')
             if target.exists():
-                if file_digest(target) != expected_hash:
+                previous_hash = file_digest(target)
+                if previous_hash == expected_hash:
+                    unchanged += 1
+                elif known_files.get(name) == previous_hash:
+                    pending.append((target, data, expected_hash, previous_hash))
+                else:
                     raise ValueError('Ya existe un archivo diferente: ' + name)
-                unchanged += 1
             else:
-                pending.append((target, data, expected_hash))
+                pending.append((target, data, expected_hash, None))
     if not dry_run:
-        for target, data, expected_hash in pending:
-            # Exclusive creation also prevents overwriting a file added during the copy.
-            with target.open('xb') as stream:
-                stream.write(data)
+        for target, data, expected_hash, previous_hash in pending:
+            if previous_hash is None:
+                # Exclusive creation prevents overwriting a file added during the copy.
+                created = False
+                try:
+                    with target.open('xb') as stream:
+                        created = True
+                        stream.write(data)
+                except Exception:
+                    if created:
+                        target.unlink(missing_ok=True)
+                    raise
+            else:
+                temporary_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(dir=destination, prefix='.expedientes-sync-', suffix='.tmp', delete=False) as stream:
+                        temporary_path = Path(stream.name)
+                        stream.write(data)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if file_digest(temporary_path) != expected_hash:
+                        raise ValueError('La comprobacion del archivo actualizado ha fallado.')
+                    if target.is_symlink() or file_digest(target) != previous_hash:
+                        raise ValueError('El archivo ha cambiado durante la copia: ' + target.name)
+                    temporary_path.replace(target)
+                finally:
+                    if temporary_path is not None:
+                        temporary_path.unlink(missing_ok=True)
             if file_digest(target) != expected_hash:
                 raise ValueError('La verificacion del archivo copiado ha fallado.')
     return len(pending), unchanged
