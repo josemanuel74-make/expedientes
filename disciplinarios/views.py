@@ -69,6 +69,10 @@ FINAL_COORDINATION_EMAIL = "elisamaria.sanchez@educacion.gob.es"
 TEAMS_AUTOMATION_EMAIL = "josemanuel.rodriguez@edumelilla.es"
 DIRECTION_REMINDER_EMAIL = "josemanuel.rodriguez@edumelilla.es"
 DIRECTION_APPOINTMENT_REMINDER_HOURS = 2
+FAMILY_SIGNED_DOCUMENT_LABELS = {
+    "07": "Vista y Audiencia",
+    "11": "Notificacion familias",
+}
 
 CASE_STATUSES = [
     ("iniciado", "01. Inicio de expediente"),
@@ -2497,7 +2501,7 @@ def upload_family_signed_document(document_id: int):
     case = get_case(document["case_id"])
     if not user_can_access_case(case):
         abort(403)
-    if document["doc_number"] != "07" or not document["is_latest"]:
+    if document["doc_number"] not in FAMILY_SIGNED_DOCUMENT_LABELS or not document["is_latest"]:
         abort(400)
     uploaded = request.files.get("family_signed_pdf")
     if not uploaded or not uploaded.filename or Path(uploaded.filename).suffix.lower() != ".pdf":
@@ -2512,7 +2516,8 @@ def upload_family_signed_document(document_id: int):
         return redirect(url_for("main.case_detail", case_id=case["id"]))
     folder = Path(current_app.config["GENERATED_DOCS_DIR"]) / f"case-{case['id']}" / "family_signed"
     folder.mkdir(parents=True, exist_ok=True)
-    name = f"07 - Vista y Audiencia - firmado-familia - v{document['version_number']:02d} - {secrets.token_hex(8)}.pdf"
+    label = FAMILY_SIGNED_DOCUMENT_LABELS[document["doc_number"]]
+    name = f"{document['doc_number']} - {label} - firmado-familia - v{document['version_number']:02d} - {secrets.token_hex(8)}.pdf"
     path = folder / name
     created = False
     try:
@@ -2531,7 +2536,7 @@ def upload_family_signed_document(document_id: int):
         if created:
             path.unlink(missing_ok=True)
         raise
-    log_action("upload_family_signed_pdf", "document", case["id"], f"Vista y audiencia v{document['version_number']:02d}")
+    log_action("upload_family_signed_pdf", "document", case["id"], f"{document['doc_number']} - {label} v{document['version_number']:02d}")
     flash("PDF firmado por la familia guardado en el expediente.", "success")
     return redirect(url_for("main.case_detail", case_id=case["id"]))
 
@@ -2540,7 +2545,7 @@ def upload_family_signed_document(document_id: int):
 @login_required
 def download_family_signed_document(upload_id: int):
     upload = get_db().execute(
-        """SELECT family_signed_documents.*, generated_documents.case_id
+        """SELECT family_signed_documents.*, generated_documents.case_id, generated_documents.template_name
            FROM family_signed_documents
            JOIN generated_documents ON generated_documents.id = family_signed_documents.generated_document_id
            WHERE family_signed_documents.id = ?""", (upload_id,),
@@ -2552,7 +2557,7 @@ def download_family_signed_document(upload_id: int):
     path = Path(upload["output_path"])
     if not path.is_file():
         abort(404)
-    log_action("download_family_signed_pdf", "document", upload["case_id"], "Vista y audiencia: PDF de la familia")
+    log_action("download_family_signed_pdf", "document", upload["case_id"], f"{upload['template_name']}: PDF de la familia")
     return send_file(path, as_attachment=True, mimetype="application/pdf")
 
 

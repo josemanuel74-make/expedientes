@@ -206,7 +206,7 @@
           <td data-label="Fecha">{{ document.created_at }}</td>
           <td data-label="Acciones">
             <div class="row-actions">
-              {% if document.doc_number == "07" %}
+              {% if document.doc_number in ("07", "11") %}
               {% include "cases/family_signed.html" %}
               {% endif %}
               {% if document.signature_status == "signed" and document.signed_pdf_path %}

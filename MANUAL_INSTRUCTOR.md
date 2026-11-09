@@ -92,7 +92,7 @@ AutoFirma debe estar instalado y disponible en el equipo desde el que firmas. El
 
 Si la operación da error, comprueba el estado antes de repetirla. No generes una versión nueva para resolver un problema de AutoFirma.
 
-## 7. Documento 07: firma de la familia
+## 7. Firma de la familia: documentos 07 y 11
 
 1. Genera y firma digitalmente el 07, Vista y Audiencia.
 2. Descarga el PDF firmado para recoger las firmas de los comparecientes en la copia correspondiente.
@@ -104,6 +104,10 @@ Si la operación da error, comprueba el estado antes de repetirla. No generes un
 El PDF aportado se guarda aparte: no sustituye el DOCX ni el PDF firmado digitalmente por el instructor. Se vincula a la versión del 07 desde la que lo subes.
 
 Si aportas otra copia, se conservan las anteriores. Comprueba que todas las páginas estén completas y legibles antes de subirla. Si se generó otra versión del 07, revisa a cuál corresponde la copia firmada.
+
+El documento 11, Notificación a familias, también permite aportar la copia firmada por la familia. Cuando Dirección haya generado ese documento, abre Firma de la familia en su fila, selecciona el PDF y pulsa Subir PDF de la familia. Se mantiene el mismo límite de 8 MB y puedes descargar la copia después. El instructor asignado puede aportarla, pero la generación y la firma digital del 11 siguen correspondiendo a Dirección o administración.
+
+Las copias aportadas en el 07 y en el 11 se incluyen en el ZIP y en la sincronización con Teams, también si se suben después del cierre.
 
 ## 8. Informe 00 y propuesta 09
 
@@ -154,7 +158,7 @@ Si faltan archivos en Teams, comunícalo a Dirección o administración; no hace
 - No aparece Firmar PDF: revisa el firmante y la versión actual. Puede corresponder a Dirección, estar ya firmado o tener pendiente un requisito previo.
 - No permite firmar el 09: comprueba que el informe 00 esté generado y firmado.
 - AutoFirma falla: revisa que esté instalado, que puedas usar tu certificado y que la app no haya guardado ya la firma.
-- No permite subir el PDF de la familia: comprueba que sea un PDF de hasta 8 MB y que estés en la versión actual del documento 07.
+- No permite subir el PDF de la familia: comprueba que sea un PDF de hasta 8 MB y que estés en la versión actual del documento 07 o del 11.
 - La sesión ha caducado: vuelve a solicitar un código. Comprueba lo que quedó guardado antes de repetir una generación o una subida.
 - No recibes el código o un aviso: revisa el correo utilizado y la carpeta de correo no deseado; si persiste, avisa a administración.
 

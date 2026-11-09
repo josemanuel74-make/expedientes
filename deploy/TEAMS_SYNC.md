@@ -7,8 +7,8 @@ La tarea de macOS `es.edumelilla.expedientes-teams-sync` revisa el VPS cada
 fecha de cierre posterior a su activacion. En la app, ese cierre se produce
 al firmar el documento 12. Copia las ultimas versiones de los DOCX y los
 PDF firmados a la carpeta ya creada del expediente para el curso configurado.
-Tambien incluye los PDF de Vista y Audiencia aportados con la firma de la
-familia. Si se suben despues del cierre, la fecha de aportacion los vuelve
+Tambien incluye los PDF del 07 (Vista y Audiencia) y del 11 (Notificacion
+a familias) aportados con la firma de la familia. Si se suben despues del cierre, la fecha de aportacion los vuelve
 a incluir en la revision y su huella provoca una nueva copia.
 
 OneDrive completa la subida a Teams. El Mac debe estar encendido, con la

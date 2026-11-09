@@ -65,6 +65,21 @@ class FamilyUploadTests(unittest.TestCase):
             session.clear()
             session.update(user_id=user_id, csrf_token='test')
 
+    def add_document_11(self):
+        folder = self.root / 'generated_docs/case-1'
+        original = folder / '11 - Notificacion familias.docx'
+        original.write_bytes(b'original-11')
+        signed = folder / '11 - firmado-director.pdf'
+        signed.write_bytes(PDF)
+        self.db.execute("""INSERT INTO generated_documents
+            (id, case_id, template_name, doc_number, output_path, created_by_user_id)
+            VALUES (11, 1, '11 - Notificacion familias.docx', '11', ?, 1)""", (str(original),))
+        self.db.execute("""INSERT INTO signature_requests (generated_document_id, signer_name,
+            signer_email, signer_role, status, signed_pdf_path)
+            VALUES (11, 'Direccion prueba', 'admin@example.test', 'director', 'signed', ?)""", (str(signed),))
+        self.db.commit()
+        return signed
+
     def upload(self, data=PDF, filename='familia.pdf', document_id=7, csrf=True):
         fields = {'family_signed_pdf': (io.BytesIO(data), filename)}
         if csrf:
@@ -116,7 +131,7 @@ class FamilyUploadTests(unittest.TestCase):
         self.assertEqual(self.upload(b'x' * (10 * 1024 * 1024)).status_code, 302)
         self.assertEqual(self.db.execute('SELECT count(*) FROM family_signed_documents').fetchone()[0], 0)
 
-    def test_only_current_document_07_accepts_uploads(self):
+    def test_other_document_types_and_old_versions_are_rejected(self):
         self.db.execute("UPDATE generated_documents SET doc_number='08'")
         self.db.commit()
         self.assertEqual(self.upload().status_code, 400)
@@ -151,6 +166,57 @@ class FamilyUploadTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
             manifest = json.loads(archive.read('manifest.json'))
             self.assertIn(Path(row['output_path']).name, manifest['files'])
+        source = REMOTE_CLOSED_CASES.replace('/home/guardias/expedientes', str(self.root))
+        output = subprocess.check_output([sys.executable, '-c', source, '2026-11-01 00:00:00', ''])
+        self.assertEqual([c['number'] for c in json.loads(output)['cases']], ['TEST-01'])
+
+    def test_11_accepts_assigned_instructor_upload_without_changing_director_signature(self):
+        original_signed = self.add_document_11()
+        self.assertEqual(self.upload(document_id=11).status_code, 302)
+        row = self.db.execute('SELECT * FROM family_signed_documents').fetchone()
+        self.assertEqual(row['generated_document_id'], 11)
+        self.assertTrue(Path(row['output_path']).name.startswith('11 - Notificacion familias - firmado-familia'))
+        self.assertEqual(original_signed.read_bytes(), PDF)
+        signature = self.db.execute('SELECT status, signer_role FROM signature_requests WHERE generated_document_id=11').fetchone()
+        self.assertEqual(tuple(signature), ('signed', 'director'))
+        response = self.client.get(f"/family-signed/{row['id']}/download")
+        self.assertEqual(response.data, PDF)
+        response.close()
+        with patch('disciplinarios.views.backfill_signature_requests_for_case'):
+            response = self.client.get('/cases/1')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'/documents/11/family-signed', response.data)
+
+    def test_11_rejects_other_instructor_and_accepts_admin(self):
+        self.add_document_11()
+        self.login(3)
+        self.assertEqual(self.upload(document_id=11).status_code, 403)
+        self.login(1)
+        self.assertEqual(self.upload(document_id=11).status_code, 302)
+        self.login(3)
+        self.assertEqual(self.client.get('/family-signed/1/download').status_code, 403)
+
+    def test_11_previous_version_cannot_receive_upload(self):
+        self.add_document_11()
+        self.db.execute('UPDATE generated_documents SET is_latest=0 WHERE id=11')
+        self.db.commit()
+        self.assertEqual(self.upload(document_id=11).status_code, 400)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM family_signed_documents').fetchone()[0], 0)
+
+    def test_11_family_pdf_is_in_zip_and_teams_sync_after_closure(self):
+        self.add_document_11()
+        self.upload(document_id=11)
+        self.db.execute("UPDATE family_signed_documents SET created_at='2026-11-02 10:00:00'")
+        self.db.commit()
+        name = Path(self.db.execute('SELECT output_path FROM family_signed_documents').fetchone()[0]).name
+        response = self.client.get('/cases/1/export')
+        with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+            self.assertEqual(archive.read(name), PDF)
+        response.close()
+        source = REMOTE_EXPORT.replace('/home/guardias/expedientes', str(self.root))
+        bundle = subprocess.check_output([sys.executable, '-c', source, 'TEST-01'])
+        with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+            self.assertEqual(archive.read('documents/' + name), PDF)
         source = REMOTE_CLOSED_CASES.replace('/home/guardias/expedientes', str(self.root))
         output = subprocess.check_output([sys.executable, '-c', source, '2026-11-01 00:00:00', ''])
         self.assertEqual([c['number'] for c in json.loads(output)['cases']], ['TEST-01'])
