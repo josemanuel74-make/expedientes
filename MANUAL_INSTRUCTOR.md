@@ -147,7 +147,7 @@ Descargar firmado obtiene el PDF con la firma digital. DOCX origen obtiene la co
 
 La app marca el expediente como cerrado al firmarse el documento 12. La sincronización no depende del cierre: la tarea configurada en el Mac de Dirección revisa cada cinco minutos los documentos de los expedientes abiertos y cerrados, y copia las novedades a su carpeta ya creada en Teams, a través de OneDrive.
 
-Se recogen nuevas versiones, firmas y PDF aportados por la familia, también después del cierre. Las copias gestionadas por la tarea se actualizan si cambia su contenido; si un archivo se ha modificado manualmente en Teams, se conserva y se registra el conflicto para su revisión. Las versiones anteriores con otro nombre no se borran.
+Se recogen nuevas versiones, firmas y PDF aportados por la familia, también después del cierre. La app es el origen de la copia: si cambia un documento, se actualiza el archivo de su carpeta de Teams. Antes de sustituir una copia distinta, la tarea la conserva y verifica en Historial de sincronizacion, incluso si se había editado manualmente en Teams. Las versiones anteriores con otro nombre no se borran. Realiza los cambios del documento vigente desde la app.
 
 El Mac debe estar encendido, con la sesión iniciada y OneDrive conectado. Si no lo está, la copia queda para una revisión posterior. La subida no tiene por qué ser inmediata.
 

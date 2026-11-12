@@ -20,12 +20,14 @@ abierta la app web o Codex. El VPS se consulta en modo solo lectura.
 
 Los fallos de conexion, carpetas todavia no disponibles o conflictos de
 archivos se reintentan en las siguientes revisiones y quedan registrados.
-Se guarda la huella de cada archivo copiado. Si el origen cambia y el destino
-conserva la huella de la ultima copia gestionada, el destino se actualiza
-mediante un archivo temporal verificado y una sustitucion atomica. Si el
-destino se modifico manualmente, o no hay una huella previa que permita
-identificarlo, el conflicto requiere revision manual y no se sobrescribe.
-La copia no borra archivos de otras versiones ni cambia permisos.
+Se guarda la huella de cada archivo copiado. Cuando cambia el origen, la
+copia automatica conserva primero cada archivo diferente en la subcarpeta
+`Historial de sincronizacion`, verifica su contenido y actualiza el archivo
+vigente mediante una sustitucion atomica. Esto tambien se aplica si el destino
+se modifico manualmente o no existia una huella anterior. La app es el origen
+del documento vigente; las correcciones deben realizarse en la app.
+Si no puede conservar y verificar la copia anterior, no la sustituye y
+reintenta la operacion despues. No borra archivos de otras versiones ni cambia permisos.
 
 Instalacion desde la raiz del proyecto (macOS):
 
@@ -34,6 +36,11 @@ python3 tools/install_teams_sync.py \
   --teams-root "/ruta/a/002 - Expedientes Disciplinarios 26 - 27" \
   --identity "/ruta/a/la/clave/SSH"
 ```
+
+El instalador copia los scripts a una carpeta privada `runtime`, fuera de
+OneDrive, y usa el interprete real de Python. Asi no depende de la disponibilidad
+del proyecto o de su entorno virtual en la nube. La ruta de la biblioteca
+de destino debe seguir correspondiendo a la ubicacion activa de OneDrive.
 
 El instalador conserva el estado si ya existia. El estado, fechas de revision
 y errores estan en `~/Library/Application Support/ExpedientesTeamsSync/`:

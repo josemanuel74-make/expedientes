@@ -66,8 +66,35 @@ def file_digest(path: Path) -> str:
         return result
 
 
+def preserve_previous_copy(target: Path, expected_hash: str):
+    history = target.parent / 'Historial de sincronizacion'
+    if history.is_symlink():
+        raise ValueError('El historial no puede ser un enlace simbolico.')
+    history.mkdir(exist_ok=True)
+    backup = history / f'{target.stem} - copia anterior {expected_hash[:16]}{target.suffix}'
+    if backup.is_symlink() or target.is_symlink():
+        raise ValueError('El archivo no puede ser un enlace simbolico.')
+    if not backup.exists():
+        data = target.read_bytes()
+        if hashlib.sha256(data).hexdigest() != expected_hash:
+            raise ValueError('El archivo ha cambiado antes de conservar su copia: ' + target.name)
+        created = False
+        try:
+            with backup.open('xb') as stream:
+                created = True
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except Exception:
+            if created:
+                backup.unlink(missing_ok=True)
+            raise
+    if file_digest(backup) != expected_hash:
+        raise ValueError('La copia anterior no supera la comprobacion de integridad.')
+
+
 def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool = False,
-                known_files: dict[str, str] | None = None):
+                known_files: dict[str, str] | None = None, preserve_previous: bool = False):
     teams_root = teams_root.expanduser().resolve(strict=True)
     folders = [p for p in teams_root.iterdir() if p.is_dir() and p.name.startswith(case_number + ' - ')]
     if len(folders) != 1 or folders[0].is_symlink():
@@ -94,7 +121,7 @@ def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool
                 previous_hash = file_digest(target)
                 if previous_hash == expected_hash:
                     unchanged += 1
-                elif known_files.get(name) == previous_hash:
+                elif preserve_previous or known_files.get(name) == previous_hash:
                     pending.append((target, data, expected_hash, previous_hash))
                 else:
                     raise ValueError('Ya existe un archivo diferente: ' + name)
@@ -114,6 +141,8 @@ def synchronize(bundle: bytes, teams_root: Path, case_number: str, dry_run: bool
                         target.unlink(missing_ok=True)
                     raise
             else:
+                if preserve_previous:
+                    preserve_previous_copy(target, previous_hash)
                 temporary_path = None
                 try:
                     with tempfile.NamedTemporaryFile(dir=destination, prefix='.expedientes-sync-', suffix='.tmp', delete=False) as stream:

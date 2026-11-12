@@ -116,7 +116,7 @@ class CaseQueryTests(unittest.TestCase):
 
 
 class AutomaticUpdateIntegrationTests(unittest.TestCase):
-    def test_same_name_signature_update_then_manual_conflict_in_old_closed_case(self):
+    def test_same_name_updates_preserve_previous_copies_in_old_closed_case(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source_root = root / 'server'
@@ -162,11 +162,14 @@ class AutomaticUpdateIntegrationTests(unittest.TestCase):
                 self.assertEqual(download.call_count, 2)
                 (target / 'signed.pdf').write_bytes(b'manual-teams-edit')
                 signed.write_bytes(b'%PDF-third-signature')
-                self.assertEqual(run(args), 1)
-                self.assertEqual((target / 'signed.pdf').read_bytes(), b'manual-teams-edit')
+                self.assertEqual(run(args), 0)
+                self.assertEqual((target / 'signed.pdf').read_bytes(), b'%PDF-third-signature')
+                archived = [path.read_bytes() for path in (target / 'Historial de sincronizacion').iterdir()]
+                self.assertIn(b'manual-teams-edit', archived)
+                self.assertIn(b'%PDF-first-signature', archived)
                 state = json.loads(args.state.read_text())
-                self.assertIn('01', state['errors'])
-                self.assertEqual(state['completed']['01']['files']['signed.pdf'], hashlib.sha256(b'%PDF-second-signature').hexdigest())
+                self.assertNotIn('01', state['errors'])
+                self.assertEqual(state['completed']['01']['files']['signed.pdf'], hashlib.sha256(b'%PDF-third-signature').hexdigest())
 
 
 if __name__ == '__main__':

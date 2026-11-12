@@ -44,7 +44,16 @@ def main():
                     str(project_root / 'tools/coordinated_sha256.swift'),
                     '-o', str(hash_helper)], check=True, timeout=120)
     hash_helper.chmod(0o700)
-    command = [sys.executable, str(project_root / 'tools/auto_sync_teams.py'),
+    runtime = support / 'runtime'
+    runtime.mkdir(mode=0o700, exist_ok=True)
+    for name in ('auto_sync_teams.py', 'sync_teams.py'):
+        data = (project_root / 'tools' / name).read_bytes()
+        compile(data, name, 'exec')
+        with tempfile.NamedTemporaryFile(dir=runtime, delete=False) as stream:
+            temporary_path = Path(stream.name)
+            stream.write(data)
+        temporary_path.replace(runtime / name)
+    command = [str(Path(sys.executable).resolve()), str(runtime / 'auto_sync_teams.py'),
                '--teams-root', str(teams_root), '--identity', str(installed_identity),
                '--state', str(support / 'state.json')]
     subprocess.run(command + ['--initialize'], check=True, timeout=150)
@@ -55,7 +64,7 @@ def main():
     path = launch_agents / (LABEL + '.plist')
     configuration = {
         'Label': LABEL, 'ProgramArguments': command,
-        'WorkingDirectory': str(project_root),
+        'WorkingDirectory': str(runtime),
         'RunAtLoad': True, 'StartInterval': 300,
         'ProcessType': 'Background', 'LowPriorityIO': True,
         'EnvironmentVariables': {'PYTHONUNBUFFERED': '1', 'TEAMS_FILE_HASH_HELPER': str(hash_helper)},

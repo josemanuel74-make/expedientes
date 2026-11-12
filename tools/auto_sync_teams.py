@@ -133,6 +133,7 @@ def run(args):
             lambda bundle, number: synchronize(
                 bundle, args.teams_root, number,
                 known_files=state['completed'].get(number, {}).get('files', {}),
+                preserve_previous=True,
             ),
             lambda value: save_state(state_path, value),
         )

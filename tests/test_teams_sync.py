@@ -63,6 +63,31 @@ class TeamsCopyTests(unittest.TestCase):
             synchronize(self.make_bundle(b'%PDF-updated'), self.root, '03', known_files=known)
         self.assertEqual(target.read_bytes(), b'manually-edited')
 
+    def test_preserve_mode_archives_different_copy_before_updating(self):
+        target = self.folder / 'signed.pdf'
+        target.write_bytes(b'manually-edited')
+        self.assertEqual(synchronize(self.bundle, self.root, '03', preserve_previous=True), (1, 0))
+        self.assertEqual(target.read_bytes(), self.data)
+        backups = list((self.folder / 'Historial de sincronizacion').iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), b'manually-edited')
+        self.assertEqual(synchronize(self.bundle, self.root, '03', preserve_previous=True), (0, 1))
+        self.assertEqual(len(list(backups[0].parent.iterdir())), 1)
+
+    def test_preserve_dry_run_does_not_archive_or_update(self):
+        target = self.folder / 'signed.pdf'
+        target.write_bytes(b'previous')
+        self.assertEqual(synchronize(self.bundle, self.root, '03', True, preserve_previous=True), (1, 0))
+        self.assertEqual(target.read_bytes(), b'previous')
+        self.assertFalse((self.folder / 'Historial de sincronizacion').exists())
+
+    def test_failed_preservation_leaves_original_intact(self):
+        target = self.folder / 'signed.pdf'
+        target.write_bytes(b'previous')
+        with patch('tools.sync_teams.preserve_previous_copy', side_effect=OSError('History unavailable')), self.assertRaises(OSError):
+            synchronize(self.bundle, self.root, '03', preserve_previous=True)
+        self.assertEqual(target.read_bytes(), b'previous')
+
     def test_managed_dry_run_does_not_replace(self):
         synchronize(self.bundle, self.root, '03')
         known = {'signed.pdf': hashlib.sha256(self.data).hexdigest()}
