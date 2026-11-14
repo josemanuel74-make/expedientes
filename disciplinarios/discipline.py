@@ -56,6 +56,56 @@ def matching_reports(snapshot: dict, student) -> tuple[list[dict], int]:
     return result, len(named) - len(matched)
 
 
+# Only affirmative, pupil-subject formulations are recognized. Unmatched accounts
+# remain explicitly pending review rather than being guessed from isolated words.
+BEHAVIOR_RULES = (
+    ('disruption', 'Interrumpe el desarrollo de las clases',
+     r'(?:interrupciones continuas|interrumpe(?: continuamente)? (?:la clase|las clases)|interrumpio la actividad de clase)'),
+    ('leaves', 'Abandona el aula durante las sesiones',
+     r'(?:se va del aula en mitad de la sesion|(?:sale|se sale|abandona) (?:de )?(?:el aula|la clase|clase)(?: sin permiso| durante la clase)?)'),
+    ('corridors', 'Permanece en los pasillos sin entrar a clase',
+     r'(?:no entra a clase y se queda en los pasillos(?: del centro)?|se queda en los pasillos sin entrar a clase)'),
+    ('late', 'Llega tarde a clase',
+     r'(?:llega tarde a clase(?: continuamente| de forma reiterada)?|retrasos (?:continuos|reiterados))'),
+    ('mobile', 'Utiliza el móvil en clase',
+     r'(?:usa|utiliza|uso de|utilizacion de) (?:el )?(?:movil|telefono movil)(?: en clase| en el aula)?'),
+    ('ignores', 'Desatiende las indicaciones del profesorado',
+     r'(?:no (?:hace|hacer) caso a (?:la profesora|el profesor)|desobedece (?:a la profesora|al profesor)|se le pide que lo apague y no hace caso)'),
+    ('disrespect', 'Se dirige de forma inadecuada al profesorado',
+     r'(?:hablarle mal a (?:la profesora|el profesor)|habla mal (?:a la profesora|al profesor)|falta al respeto (?:a la profesora|al profesor))'),
+    ('refusal', 'Se niega a realizar las actividades propuestas',
+     r'(?:se niega|se nego) a (?:realizar|hacer) (?:la actividad propuesta|las actividades propuestas|las tareas propuestas)'),
+    ('fight', 'Participa en una pelea',
+     r'se pelea (?:con (?:otro alumno|otra alumna|un companero|una companera)|en clase)(?: a punetazos)?'),
+    ('graffiti_staff', 'Consta la realización de pintadas con insultos dirigidos a la Jefatura de Estudios',
+     r'(?:realiza |hace )?pintadas con insultos (?:a|dirigidos a) (?:los )?jefes de estudios'),
+)
+
+
+def report_behaviors(report: dict) -> tuple[set[str], bool]:
+    if any(mark in report['incident'] for mark in ('"', '\u00ab', '\u00bb', '\u201c', '\u201d')):
+        return set(), True
+    found = set()
+    pending = False
+    sentences = re.split(r'[.!?;\n]+', report['incident'])
+    for sentence in sentences:
+        text = normalized(sentence)
+        if not text:
+            continue
+        # These are prior corrections, not new allegations to draft as charges.
+        if re.fullmatch(r'expulsion(?: de \d+ dias)?|amonestacion', text):
+            continue
+        text = re.sub(r'^(?:el alumno|la alumna) ', '', text)
+        matches = {key for key, _, pattern in BEHAVIOR_RULES if re.fullmatch(pattern, text)}
+        found.update(matches)
+        pending |= not bool(matches)
+    # Do not resolve pronouns or carry a subject across an unrecognized sentence.
+    # Such accounts may describe witnesses, another pupil, or a denial.
+    if pending:
+        return set(), True
+    return found, not bool(found)
+
+
 def draft_facts(reports: list[dict]) -> str:
     if not reports:
         raise ValueError('Selecciona al menos un parte.')
@@ -66,29 +116,22 @@ def draft_facts(reports: list[dict]) -> str:
     opening = (f'Consta un parte de disciplina {period}.'
                if count == 1 else
                f'Acumulación de partes de disciplina: {count} en total, {period}.')
-    # Summarize only structured source categories, never infer allegations from keywords in narratives.
-    categories = (
-        ('conductas contrarias a las normas', 'incumplimiento de las normas de convivencia del centro'),
-        ('conductas contrarias al plan', 'incumplimiento del Plan de Convivencia'),
-        ('falta de colaboracion sistematica', 'falta de colaboración en las actividades propuestas'),
-        ('la agresion grave fisica o moral', 'conductas registradas bajo la categoría de agresión o discriminación'),
-        ('actos de indisciplina', 'conductas registradas bajo la categoría de indisciplina, injurias u ofensas'),
-        ('actos injustificados que perturben', 'alteración del desarrollo de las actividades del centro'),
-        ('la reiteracion', 'reiteración de conductas contrarias a las normas de convivencia'),
-        ('danos graves causados', 'daños comunicados en instalaciones, materiales o bienes'),
-    )
-    summaries = []
-    covered = set()
-    for marker, description in categories:
-        matched = {i for i, r in enumerate(ordered) if marker in normalized(r['conduct'])}
-        if matched:
-            summaries.append(description)
-            covered.update(matched)
-    if summaries:
-        joined = summaries[0] if len(summaries) == 1 else '; '.join(summaries[:-1]) + '; y ' + summaries[-1]
-        body = f'Los partes seleccionados recogen las siguientes conductas: {joined}.'
-        if len(covered) < count:
-            body += ' También constan otras incidencias que deben concretarse a partir de sus relatos originales.'
+    behaviors = set()
+    pending = 0
+    for report in ordered:
+        found, needs_review = report_behaviors(report)
+        behaviors.update(found)
+        pending += needs_review
+    phrases = [description for key, description, _ in BEHAVIOR_RULES if key in behaviors]
+    if 'mobile' in behaviors and 'ignores' in behaviors:
+        phrases.remove('Utiliza el móvil en clase')
+        phrases.remove('Desatiende las indicaciones del profesorado')
+        phrases.insert(min(3, len(phrases)), 'Utiliza el móvil en clase y desatiende las indicaciones del profesorado')
+    body = '. '.join(phrases)
+    if body:
+        body = 'Según los partes seleccionados, ' + body[0].lower() + body[1:] + '.'
     else:
-        body = 'Se comunican incidencias en los partes seleccionados. Pendiente de concretar las conductas a partir de sus relatos originales.'
+        body = 'Pendiente de redactar los comportamientos concretos a partir de los relatos originales.'
+    if pending:
+        body += f" Quedan detalles de {pending} {'parte' if pending == 1 else 'partes'} pendientes de revisión y concreción en este borrador."
     return f'{body} {opening}'

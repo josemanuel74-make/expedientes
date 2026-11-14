@@ -69,7 +69,7 @@ class DisciplineReaderTests(unittest.TestCase):
         self.assertNotIn(reports[1]['incident'], draft)
         self.assertNotIn(reports[0]['correction'], draft)
 
-    def test_generic_narrative_uses_only_structured_categories(self):
+    def test_narrative_uses_incidents_not_broad_structured_categories(self):
         reports, _ = matching_reports(self.snapshot, self.student)
         reports[0]['conduct'] = 'Conductas contrarias a las normas de convivencia.Contraria'
         reports[1]['conduct'] = 'Falta de colaboración sistemática en la realización de las actividades.Contraria'
@@ -77,20 +77,61 @@ class DisciplineReaderTests(unittest.TestCase):
         draft = draft_facts(reports)
         self.assertIn('2 en total', draft)
         self.assertIn('entre el 01/10/2026 y el 02/10/2026', draft)
-        self.assertIn('incumplimiento de las normas', draft)
-        self.assertIn('falta de colaboración', draft)
+        self.assertIn('se niega a realizar las actividades', draft)
+        self.assertNotIn('incumplimiento de las normas', draft)
+        self.assertNotIn('falta de colaboración', draft)
         self.assertNotIn('agresión', draft)
         self.assertNotIn('daños', draft)
         self.assertNotIn('Se propone esclarecer', draft)
         self.assertNotIn('sanción', draft)
         self.assertNotIn('\n', draft)
 
-    def test_unknown_categories_are_not_silently_summarized_as_known(self):
+    def test_unknown_narratives_are_explicitly_pending_review(self):
         reports, _ = matching_reports(self.snapshot, self.student)
-        reports[0]['conduct'] = 'Conductas contrarias a las normas de convivencia.Contraria'
+        reports[0]['incident'] = 'Una incidencia que requiere leer el relato.'
         draft = draft_facts(reports)
-        self.assertIn('otras incidencias', draft)
+        self.assertIn('detalles de 1 parte pendientes', draft)
         self.assertNotIn(reports[1]['incident'], draft)
+
+    def test_concrete_school_style_groups_behaviors_without_copying_accounts(self):
+        base = matching_reports(self.snapshot, self.student)[0][0]
+        narratives = [
+            'Se va del aula en mitad de la sesión', 'interrupciones continuas',
+            'Usa el móvil en clase. Se le pide que lo apague y no hace caso.',
+            'No hacer caso a la profesora. Hablarle mal a la profesora',
+            'No entra a clase y se queda en los pasillos del centro. Expulsión',
+            'Pintadas con insultos a Jefes de Estudios',
+        ]
+        reports = [{**base, 'incident': text, 'id': str(i)} for i, text in enumerate(narratives)]
+        draft = draft_facts(reports)
+        for phrase in ('Interrumpe', 'Abandona', 'Permanece', 'Utiliza el móvil',
+                       'desatiende las indicaciones', 'forma inadecuada', 'pintadas con insultos', '6 en total'):
+            self.assertIn(phrase.lower(), draft.lower())
+        self.assertEqual(draft.count('desatiende las indicaciones'), 1)
+        self.assertNotIn('pendientes', draft)
+        self.assertNotIn('Expulsión', draft)
+        self.assertNotIn('sin permiso', draft)
+        self.assertNotIn('daños', draft)
+
+    def test_no_accusation_from_negation_quotation_or_another_subject(self):
+        base = matching_reports(self.snapshot, self.student)[0][0]
+        for text in ('No utiliza el móvil en clase.', 'Dice: "Usa el móvil en clase".', '"Usa el móvil en clase".',
+                     'Otro alumno lleva el teléfono. Usa el móvil en clase.',
+                     'No hubo agresión. Interrupciones continuas.'):
+            with self.subTest(text=text):
+                draft = draft_facts([{**base, 'incident': text}])
+                self.assertNotIn('Utiliza', draft)
+                self.assertNotIn('interrumpe', draft)
+                self.assertNotIn('agresión', draft)
+                self.assertIn('pendientes de revisión', draft)
+
+    def test_repeat_behavior_is_deduplicated_and_only_selected_facts_appear(self):
+        base = matching_reports(self.snapshot, self.student)[0][0]
+        report = {**base, 'incident': 'interrupciones continuas'}
+        draft = draft_facts([report, {**report, 'id': 'other'}])
+        self.assertEqual(draft.lower().count('interrumpe'), 1)
+        self.assertNotIn('pintadas', draft)
+        self.assertNotIn('móvil', draft)
 
 
 class DisciplineApiTests(unittest.TestCase):

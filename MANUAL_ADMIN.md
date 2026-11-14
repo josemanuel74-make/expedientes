@@ -62,7 +62,7 @@ El admin puede generar cualquier documento, pero ese es el reparto operativo act
 4. Pulsa Redactar borrador y revisa o modifica el texto.
 5. Pulsa Añadir a Hechos. Puedes seguir editando los hechos antes de guardar.
 
-El borrador sigue el estilo breve de los expedientes del centro: un párrafo con las conductas registradas, el número de partes seleccionados y el periodo. No copia los relatos uno por uno ni incorpora acusaciones de otros expedientes. No establece hechos probados ni propone una sanción. Jefatura debe revisar el resumen y concretar los hechos pertinentes a partir de los originales antes de guardar. Consultar o redactar no crea el expediente.
+El borrador sigue el estilo breve de los expedientes del centro: un párrafo con los comportamientos concretos descritos, agrupando las repeticiones, el número de partes seleccionados y el periodo. Se basa en formulaciones reconocidas de los relatos, no en las categorías generales del Excel. No copia los relatos uno por uno ni incorpora acusaciones de otros expedientes. Los relatos que no puede sintetizar de forma fiable quedan señalados como pendientes de revisión y concreción en el propio borrador. No establece hechos probados ni propone una sanción. Jefatura debe revisar el resumen y concretar los hechos pertinentes a partir de los originales antes de guardar. Consultar o redactar no crea el expediente.
 
 La pantalla muestra la fecha del Excel consultado. La copia de partes se actualiza cada cinco minutos mientras el Mac encargado de la sincronización está encendido, con sesión iniciada y conexión. Si falta la copia o hay una identidad ambigua, la app lo indica y no redacta.
 
