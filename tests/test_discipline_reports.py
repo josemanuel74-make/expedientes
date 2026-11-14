@@ -51,24 +51,37 @@ class DisciplineReaderTests(unittest.TestCase):
         self.assertEqual(excluded, 1)
         self.assertTrue(all(report['unit'] == 'E_1A' for report in reports))
 
-    def test_dates_and_ambiguous_school_record(self):
-        reports, _ = matching_reports(self.snapshot, self.student, '2026-10-02', '2026-10-02')
-        self.assertEqual(len(reports), 1)
-        with self.assertRaises(ValueError):
-            matching_reports(self.snapshot, self.student, '2026-10-03', '2026-10-01')
+    def test_all_dates_and_ambiguous_school_record(self):
+        reports, _ = matching_reports(self.snapshot, self.student)
+        self.assertEqual(len(reports), 2)
         reports[0]['pupil_record'] = 'different-record'
         with self.assertRaises(ValueError):
             matching_reports(self.snapshot, self.student)
 
-    def test_draft_uses_selected_facts_and_references_not_prior_corrections(self):
+    def test_draft_summarizes_selected_parts_without_copying_or_prior_corrections(self):
         reports, _ = matching_reports(self.snapshot, self.student)
         reports[0]['correction'] = 'Sanción anterior que no debe proponerse'
         draft = draft_facts([reports[0]])
         self.assertIn('01/10/2026', draft)
-        self.assertIn(reports[0]['incident'], draft)
-        self.assertIn('hoja 01-10-2026, fila 2', draft)
+        self.assertIn('consta un parte', draft)
+        self.assertNotIn(reports[0]['incident'], draft)
+        self.assertNotIn('02/10/2026', draft)
         self.assertNotIn(reports[1]['incident'], draft)
         self.assertNotIn(reports[0]['correction'], draft)
+
+    def test_generic_narrative_uses_only_structured_categories(self):
+        reports, _ = matching_reports(self.snapshot, self.student)
+        reports[0]['conduct'] = 'Conductas contrarias a las normas de convivencia.Contraria'
+        reports[1]['conduct'] = 'Falta de colaboración sistemática en la realización de las actividades.Contraria'
+        reports[0]['incident'] = 'No hubo agresión ni daños.'
+        draft = draft_facts(reports)
+        self.assertIn('constan 2 partes', draft)
+        self.assertIn('entre el 01/10/2026 y el 02/10/2026', draft)
+        self.assertIn('incumplimiento de las normas', draft)
+        self.assertIn('falta de colaboración', draft)
+        self.assertNotIn('agresión', draft)
+        self.assertNotIn('daños', draft)
+        self.assertIn('sin anticipar una sanción', draft)
 
 
 class DisciplineApiTests(unittest.TestCase):
@@ -110,7 +123,8 @@ class DisciplineApiTests(unittest.TestCase):
         report = response.json['reports'][0]
         response = self.draft([report['id']])
         self.assertEqual(response.status_code, 200)
-        self.assertIn(report['incident'], response.json['draft'])
+        self.assertIn('01/10/2026', response.json['draft'])
+        self.assertNotIn(report['incident'], response.json['draft'])
         self.assertEqual(response.json['student_id'], 1)
         self.assertEqual(self.db.execute('SELECT count(*) FROM cases').fetchone()[0], 0)
 
@@ -129,10 +143,17 @@ class DisciplineApiTests(unittest.TestCase):
     def test_snapshot_change_requires_refresh(self):
         self.assertEqual(self.draft([self.snapshot['reports'][0]['id']], source='old-version').status_code, 409)
 
-    def test_empty_or_excessive_selection_and_bad_dates(self):
+    def test_empty_or_excessive_selection(self):
         self.assertEqual(self.draft([]).status_code, 400)
         self.assertEqual(self.draft(['a'] * 51).status_code, 400)
-        self.assertEqual(self.client.get('/api/students/1/discipline-reports?start=wrong').status_code, 400)
+
+    def test_lookup_returns_all_parts_even_with_old_date_query_or_over_200(self):
+        report = matching_reports(self.snapshot, {'full_name': 'Ana Pérez García', 'group_name': 'E_1A'})[0][0]
+        self.snapshot['reports'] = [{**report, 'id': str(n)} for n in range(205)]
+        self.source.write_text(json.dumps(self.snapshot))
+        response = self.client.get('/api/students/1/discipline-reports?start=2099-01-01&end=wrong')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json['reports']), 205)
 
     def test_missing_snapshot_is_not_reported_as_zero_parts(self):
         self.source.unlink()
@@ -155,6 +176,8 @@ class DisciplineApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('Posibles cargos a partir de los partes'.encode(), response.data)
         self.assertIn(b'discipline-draft.js', response.data)
+        self.assertNotIn(b'id="discipline-start"', response.data)
+        self.assertNotIn(b'id="discipline-end"', response.data)
 
 
 if __name__ == '__main__':

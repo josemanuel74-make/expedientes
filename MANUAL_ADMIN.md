@@ -57,12 +57,12 @@ El admin puede generar cualquier documento, pero ese es el reparto operativo act
 ## Proponer cargos desde los partes
 
 1. En Nuevo expediente, selecciona al alumno.
-2. En Posibles cargos a partir de los partes, indica las fechas si procede y pulsa Consultar partes.
+2. En Posibles cargos a partir de los partes, pulsa Consultar partes. Se muestran todos los partes disponibles del alumno en el curso, sin pedir fechas.
 3. Comprueba la identidad, el grupo y las fechas. Marca solo los partes relacionados con el expediente.
 4. Pulsa Redactar borrador y revisa o modifica el texto.
 5. Pulsa Añadir a Hechos. Puedes seguir editando los hechos antes de guardar.
 
-El borrador recoge incidencias comunicadas, no hechos probados ni una propuesta de sanción. No incorpora automáticamente todos los antecedentes. Jefatura debe valorar su pertinencia y revisar la redacción. Consultar o redactar no crea el expediente.
+El borrador presenta una síntesis del periodo y de las categorías de conducta registradas en los partes seleccionados, sin copiar los relatos uno por uno. No establece hechos probados ni propone una sanción. Jefatura debe revisar el resumen y concretar los hechos pertinentes a partir de los originales antes de guardar. Consultar o redactar no crea el expediente.
 
 La pantalla muestra la fecha del Excel consultado. La copia de partes se actualiza cada cinco minutos mientras el Mac encargado de la sincronización está encendido, con sesión iniciada y conexión. Si falta la copia o hay una identidad ambigua, la app lo indica y no redacta.
 

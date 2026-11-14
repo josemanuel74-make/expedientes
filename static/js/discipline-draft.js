@@ -68,8 +68,6 @@
     const id = student.value;
     if (!id) return;
     const endpoint = url(root.dataset.reportsUrl, id);
-    endpoint.searchParams.set("start", document.getElementById("discipline-start").value);
-    endpoint.searchParams.set("end", document.getElementById("discipline-end").value);
     load.disabled = true;
     status.textContent = "Consultando partes…";
     try {
@@ -100,7 +98,6 @@
       const modified = new Date(data.source_modified_at);
       const stamp = Number.isNaN(modified.getTime()) ? "" : ` Excel actualizado: ${modified.toLocaleString("es-ES")}.`;
       status.textContent = `${data.total} partes coincidentes. Curso ${data.school_year}.${stamp}`;
-      if (data.total > 200) status.textContent += " Se muestran los últimos 200; acota las fechas para consultar los anteriores.";
       if (data.excluded_unit) status.textContent += ` Hay ${data.excluded_unit} registros con ese nombre en otra unidad que no se han incluido.`;
     } catch (error) {
       if (current === revision) status.textContent = error.message;

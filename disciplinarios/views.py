@@ -1792,11 +1792,11 @@ def student_discipline_reports(student_id: int):
     try:
         student = discipline_student(student_id)
         snapshot = load_snapshot(Path(current_app.config["DISCIPLINE_REPORTS_PATH"]))
-        reports, excluded = matching_reports(snapshot, student, request.args.get("start", ""), request.args.get("end", ""))
+        reports, excluded = matching_reports(snapshot, student)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({
-        "student_id": student_id, "reports": reports[-200:], "total": len(reports),
+        "student_id": student_id, "reports": reports, "total": len(reports),
         "excluded_unit": excluded, "source_sha256": snapshot["source_sha256"],
         "source_modified_at": snapshot["source_modified_at"], "school_year": snapshot["school_year"],
     })
