@@ -31,6 +31,7 @@ import xlrd
 
 from .auth import ACTIVE_INSTRUCTOR_STATUSES, admin_required, login_required, send_email_message
 from .db import get_db
+from .discipline import draft_facts, load_snapshot, matching_reports, normalized, person_key
 from .directory import (
     find_instructor,
     format_person_name,
@@ -1709,6 +1710,8 @@ def case_create():
     instructors = load_instructors_from_excel(Path(current_app.config["PROJECT_ROOT"]))
 
     if request.method == "POST":
+        if request.form.get("facts_source_student_id") and request.form["facts_source_student_id"] != request.form.get("student_id"):
+            return ("El borrador de hechos corresponde a otro alumno. Revisa la selección.", 400)
         instructor_name, instructor_email = resolve_instructor_assignment(
             Path(current_app.config["PROJECT_ROOT"]),
             request.form["instructor_name"].strip(),
@@ -1768,6 +1771,61 @@ def case_create():
         statuses=CASE_STATUSES,
         correction_types=CORRECTION_TYPES,
     )
+
+
+def discipline_student(student_id: int):
+    student = get_db().execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+    if student is None:
+        abort(404)
+    name = person_key(student["full_name"])
+    unit = normalized(student["group_name"]).replace(" ", "")
+    duplicates = [s for s in get_db().execute("SELECT id, full_name, group_name FROM students").fetchall()
+                  if person_key(s["full_name"]) == name and normalized(s["group_name"]).replace(" ", "") == unit]
+    if len(duplicates) != 1:
+        raise ValueError("Hay fichas de alumnado duplicadas con ese nombre y unidad. Revisa su identidad.")
+    return student
+
+
+@main_bp.get("/api/students/<int:student_id>/discipline-reports")
+@admin_required
+def student_discipline_reports(student_id: int):
+    try:
+        student = discipline_student(student_id)
+        snapshot = load_snapshot(Path(current_app.config["DISCIPLINE_REPORTS_PATH"]))
+        reports, excluded = matching_reports(snapshot, student, request.args.get("start", ""), request.args.get("end", ""))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({
+        "student_id": student_id, "reports": reports[-200:], "total": len(reports),
+        "excluded_unit": excluded, "source_sha256": snapshot["source_sha256"],
+        "source_modified_at": snapshot["source_modified_at"], "school_year": snapshot["school_year"],
+    })
+
+
+@main_bp.post("/api/students/<int:student_id>/discipline-draft")
+@admin_required
+def student_discipline_draft(student_id: int):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Solicitud no válida."}), 400
+    identifiers = payload.get("report_ids")
+    if not isinstance(identifiers, list) or not 1 <= len(identifiers) <= 50 or any(not isinstance(v, str) for v in identifiers):
+        return jsonify({"error": "Selecciona entre 1 y 50 partes."}), 400
+    try:
+        student = discipline_student(student_id)
+        snapshot = load_snapshot(Path(current_app.config["DISCIPLINE_REPORTS_PATH"]))
+        if snapshot["source_sha256"] != payload.get("source_sha256"):
+            return jsonify({"error": "Los partes han cambiado. Vuelve a consultarlos antes de redactar."}), 409
+        reports, _ = matching_reports(snapshot, student)
+        selected = [r for r in reports if r["id"] in set(identifiers)]
+        if len(selected) != len(set(identifiers)):
+            return jsonify({"error": "La selección contiene partes que no corresponden a este alumno."}), 400
+        text = draft_facts(selected)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    log_action("draft_from_discipline_reports", "student", student_id,
+               json.dumps({"source": snapshot["source_sha256"], "parts": [r["id"] for r in selected]}))
+    return jsonify({"student_id": student_id, "draft": text, "count": len(selected)})
 
 
 @main_bp.route("/cases/<int:case_id>/edit", methods=("GET", "POST"))

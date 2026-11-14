@@ -1,0 +1,21 @@
+<div class="full-width discipline-assistant" id="discipline-assistant"
+     data-reports-url="{{ url_for('main.student_discipline_reports', student_id=0) }}"
+     data-draft-url="{{ url_for('main.student_discipline_draft', student_id=0) }}">
+  <h3>Posibles cargos a partir de los partes</h3>
+  <div class="discipline-filters">
+    <label>Desde<input type="date" id="discipline-start"></label>
+    <label>Hasta<input type="date" id="discipline-end"></label>
+    <button type="button" class="button button-secondary" id="discipline-load">Consultar partes</button>
+  </div>
+  <p class="muted" id="discipline-status" role="status" aria-live="polite">Sin partes consultados.</p>
+  <div id="discipline-reports" class="discipline-reports"></div>
+  <div class="actions" id="discipline-selection" hidden>
+    <button type="button" class="button button-secondary" id="discipline-generate" disabled>Redactar borrador</button>
+    <span class="muted" id="discipline-count">0 partes seleccionados</span>
+  </div>
+  <div id="discipline-preview" hidden>
+    <label>Borrador para revisión de Jefatura de Estudios<textarea id="discipline-draft" rows="9"></textarea></label>
+    <button type="button" class="button button-secondary" id="discipline-apply">Añadir a Hechos</button>
+  </div>
+  <input type="hidden" name="facts_source_student_id" id="facts-source-student" value="">
+</div>

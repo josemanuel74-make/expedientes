@@ -44,6 +44,7 @@ def create_app() -> Flask:
         DATABASE=str(project_root / "instance" / "disciplinarios.sqlite3"),
         PROJECT_ROOT=project_root,
         GENERATED_DOCS_DIR=str(project_root / "generated_docs"),
+        DISCIPLINE_REPORTS_PATH=os.environ.get("DISCIPLINE_REPORTS_PATH", str(project_root / "instance/discipline_reports.json")),
         APP_BASE_URL=app_base_url,
         MAIL_HOST=os.environ.get("MAIL_HOST", ""),
         MAIL_PORT=int(os.environ.get("MAIL_PORT", "587")),

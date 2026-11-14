@@ -1030,6 +1030,29 @@ textarea {
   max-width: 360px;
 }
 
+.discipline-assistant {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 18px 0;
+  min-width: 0;
+}
+
+.discipline-assistant h3 { font-size: 1.05rem; margin: 0 0 14px; }
+.discipline-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.discipline-filters button { grid-column: 1 / -1; justify-self: start; }
+.discipline-filters label { min-width: 0; }
+.discipline-filters input { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 600px) {
+  .discipline-filters { grid-template-columns: minmax(0, 1fr); }
+}
+.discipline-reports { max-height: 420px; overflow: auto; margin-bottom: 14px; }
+.discipline-report { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.discipline-report > input { width: 18px; height: 18px; margin-top: 4px; padding: 0; }
+.discipline-report > span { display: grid; gap: 6px; font-weight: 400; overflow-wrap: anywhere; }
+.discipline-assistant [hidden] { display: none; }
+#discipline-preview { margin-top: 16px; }
+#discipline-preview button { margin-top: 12px; }
+
 .family-upload .stack-form {
   display: grid;
   gap: 12px;
