@@ -63,7 +63,7 @@ class DisciplineReaderTests(unittest.TestCase):
         reports[0]['correction'] = 'Sanción anterior que no debe proponerse'
         draft = draft_facts([reports[0]])
         self.assertIn('01/10/2026', draft)
-        self.assertIn('consta un parte', draft)
+        self.assertIn('Consta un parte', draft)
         self.assertNotIn(reports[0]['incident'], draft)
         self.assertNotIn('02/10/2026', draft)
         self.assertNotIn(reports[1]['incident'], draft)
@@ -75,13 +75,22 @@ class DisciplineReaderTests(unittest.TestCase):
         reports[1]['conduct'] = 'Falta de colaboración sistemática en la realización de las actividades.Contraria'
         reports[0]['incident'] = 'No hubo agresión ni daños.'
         draft = draft_facts(reports)
-        self.assertIn('constan 2 partes', draft)
+        self.assertIn('2 en total', draft)
         self.assertIn('entre el 01/10/2026 y el 02/10/2026', draft)
         self.assertIn('incumplimiento de las normas', draft)
         self.assertIn('falta de colaboración', draft)
         self.assertNotIn('agresión', draft)
         self.assertNotIn('daños', draft)
-        self.assertIn('sin anticipar una sanción', draft)
+        self.assertNotIn('Se propone esclarecer', draft)
+        self.assertNotIn('sanción', draft)
+        self.assertNotIn('\n', draft)
+
+    def test_unknown_categories_are_not_silently_summarized_as_known(self):
+        reports, _ = matching_reports(self.snapshot, self.student)
+        reports[0]['conduct'] = 'Conductas contrarias a las normas de convivencia.Contraria'
+        draft = draft_facts(reports)
+        self.assertIn('otras incidencias', draft)
+        self.assertNotIn(reports[1]['incident'], draft)
 
 
 class DisciplineApiTests(unittest.TestCase):

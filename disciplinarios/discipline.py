@@ -63,30 +63,32 @@ def draft_facts(reports: list[dict]) -> str:
     first, last = (date.fromisoformat(r['date']).strftime('%d/%m/%Y') for r in (ordered[0], ordered[-1]))
     period = f'el día {first}' if first == last else f'entre el {first} y el {last}'
     count = len(ordered)
-    opening = (f'Según la documentación examinada, consta un parte de disciplina referido a una incidencia comunicada {period}.'
+    opening = (f'Consta un parte de disciplina {period}.'
                if count == 1 else
-               f'Según la documentación examinada, constan {count} partes de disciplina relativos a incidencias comunicadas {period}.')
+               f'Acumulación de partes de disciplina: {count} en total, {period}.')
     # Summarize only structured source categories, never infer allegations from keywords in narratives.
     categories = (
-        ('conductas contrarias a las normas', 'el incumplimiento de las normas de convivencia del centro'),
-        ('conductas contrarias al plan', 'el incumplimiento del Plan de Convivencia'),
-        ('falta de colaboracion sistematica', 'la falta de colaboración en las actividades propuestas'),
+        ('conductas contrarias a las normas', 'incumplimiento de las normas de convivencia del centro'),
+        ('conductas contrarias al plan', 'incumplimiento del Plan de Convivencia'),
+        ('falta de colaboracion sistematica', 'falta de colaboración en las actividades propuestas'),
         ('la agresion grave fisica o moral', 'conductas registradas bajo la categoría de agresión o discriminación'),
         ('actos de indisciplina', 'conductas registradas bajo la categoría de indisciplina, injurias u ofensas'),
-        ('actos injustificados que perturben', 'la alteración del desarrollo de las actividades del centro'),
-        ('la reiteracion', 'la reiteración de conductas contrarias a las normas de convivencia'),
+        ('actos injustificados que perturben', 'alteración del desarrollo de las actividades del centro'),
+        ('la reiteracion', 'reiteración de conductas contrarias a las normas de convivencia'),
         ('danos graves causados', 'daños comunicados en instalaciones, materiales o bienes'),
     )
     summaries = []
+    covered = set()
     for marker, description in categories:
-        n = sum(marker in normalized(r['conduct']) for r in ordered)
-        if n:
-            summaries.append(f"{description} ({n} {'parte' if n == 1 else 'partes'})")
+        matched = {i for i, r in enumerate(ordered) if marker in normalized(r['conduct'])}
+        if matched:
+            summaries.append(description)
+            covered.update(matched)
     if summaries:
         joined = summaries[0] if len(summaries) == 1 else '; '.join(summaries[:-1]) + '; y ' + summaries[-1]
-        body = f'Las anotaciones de conducta recogidas en los partes se refieren a {joined}. Estas menciones describen lo comunicado en la documentación de origen y no constituyen una calificación definitiva de los hechos.'
+        body = f'Los partes seleccionados recogen las siguientes conductas: {joined}.'
+        if len(covered) < count:
+            body += ' También constan otras incidencias que deben concretarse a partir de sus relatos originales.'
     else:
-        body = 'La documentación recoge incidencias cuya naturaleza y circunstancias concretas deberán precisarse a partir de los relatos originales, sin atribuir en este resumen conductas que no estén expresamente identificadas.'
-    closing = 'Se propone esclarecer estos hechos durante la instrucción, contrastando el contenido de los partes y recabando las manifestaciones y demás elementos que procedan. La responsabilidad del alumno y la valoración de las conductas quedan pendientes de dicha comprobación, sin anticipar una sanción.'
-    dates = ', '.join(dict.fromkeys(date.fromisoformat(r['date']).strftime('%d/%m/%Y') for r in ordered))
-    return '\n\n'.join((opening, body, closing, f'Fechas de los partes examinados: {dates}.'))
+        body = 'Se comunican incidencias en los partes seleccionados. Pendiente de concretar las conductas a partir de sus relatos originales.'
+    return f'{body} {opening}'
